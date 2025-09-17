@@ -1,0 +1,654 @@
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+-- 显示启动消息
+local message = Instance.new("Message")
+message.Text = "脚本已启动/创作者XTTT"
+message.Parent = Workspace
+delay(3, function()
+    message:Destroy()
+end)
+
+-- 等待游戏加载完成
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+-- 等待本地玩家加载
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- 全局变量
+_G.processedParts = {}
+_G.floatSpeed = 10 -- 默认漂浮速度
+_G.moveDirection = Vector3.new(0, 1, 0) -- 默认向上移动
+_G.controlledPart = nil -- 当前控制的零件
+_G.controlMode = false -- 控制模式状态
+_G.anActivity = false -- 漂浮功能状态
+_G.useAlternativeMethod = false -- 是否使用替代方法
+
+-- 设置模拟半径
+local function setupSimulationRadius()
+    local success, err = pcall(function()
+        RunService.Heartbeat:Connect(function()
+            pcall(function()
+                sethiddenproperty(LocalPlayer, "SimulationRadius", 1000)
+                sethiddenproperty(LocalPlayer, "MaxSimulationRadius", 1000)
+            end)
+        end)
+    end)
+    
+    if not success then
+        warn("模拟半径设置失败: " .. tostring(err))
+    end
+end
+
+setupSimulationRadius()
+
+-- 替代方法：使用TweenService进行移动（适用于某些限制BodyVelocity的游戏）
+local function ProcessPartWithTween(v)
+    if v == _G.controlledPart and v:IsA("Part") and not v.Anchored then
+        -- 清除现有的Tween
+        if _G.processedParts[v] and _G.processedParts[v].tween then
+            _G.processedParts[v].tween:Cancel()
+        end
+        
+        -- 创建新的Tween
+        local targetPosition = v.Position + (_G.moveDirection.Unit * _G.floatSpeed * 0.1)
+        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(v, tweenInfo, {Position = targetPosition})
+        tween:Play()
+        
+        _G.processedParts[v] = {
+            tween = tween,
+            lastUpdate = tick()
+        }
+    end
+end
+
+-- 处理零件函数
+local function ProcessPart(v)
+    if _G.useAlternativeMethod then
+        ProcessPartWithTween(v)
+        return
+    end
+    
+    if v == _G.controlledPart and v:IsA("Part") and not v.Anchored and not v.Parent:FindFirstChild("Humanoid") and not v.Parent:FindFirstChild("Head") then
+        if _G.processedParts[v] then
+            local existingBV = _G.processedParts[v].bodyVelocity
+            if existingBV and existingBV.Parent then
+                local finalVelocity = _G.moveDirection.Unit * _G.floatSpeed
+                if existingBV.Velocity ~= finalVelocity then
+                    existingBV.Velocity = finalVelocity
+                end
+                return
+            else
+                _G.processedParts[v] = nil
+            end
+        end
+        
+        for _, x in next, v:GetChildren() do
+            if x:IsA("BodyAngularVelocity") or x:IsA("BodyForce") or x:IsA("BodyGyro") or 
+               x:IsA("BodyPosition") or x:IsA("BodyThrust") or x:IsA("BodyVelocity") or
+               x:IsA("Torque") then
+                x:Destroy()
+            end
+        end
+        
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Parent = v
+        bodyVelocity.Velocity = _G.moveDirection.Unit * _G.floatSpeed
+        bodyVelocity.MaxForce = Vector3.new(10000, 10000, 10000)
+        
+        -- 添加固定旋转的陀螺仪
+        local bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.Parent = v
+        bodyGyro.MaxTorque = Vector3.new(10000, 10000, 10000)
+        bodyGyro.P = 1000
+        bodyGyro.D = 100
+        bodyGyro.CFrame = v.CFrame
+        
+        _G.processedParts[v] = { 
+            bodyVelocity = bodyVelocity,
+            bodyGyro = bodyGyro
+        }
+    end
+end
+
+local function ProcessAllParts()
+    if _G.anActivity and _G.controlledPart then
+        ProcessPart(_G.controlledPart)
+    end
+end
+
+-- 清理所有零件
+local function CleanupParts()
+    for part, data in pairs(_G.processedParts) do
+        if data.bodyVelocity then
+            data.bodyVelocity:Destroy()
+        end
+        if data.bodyGyro then
+            data.bodyGyro:Destroy()
+        end
+        if data.tween then
+            data.tween:Cancel()
+        end
+    end
+    _G.processedParts = {}
+end
+
+-- 更新零件速度
+local function UpdateAllPartsVelocity()
+    for part, data in pairs(_G.processedParts) do
+        if data.bodyVelocity and data.bodyVelocity.Parent then
+            data.bodyVelocity.Velocity = _G.moveDirection.Unit * _G.floatSpeed
+        end
+    end
+end
+
+-- 旋转控制函数
+local function RotatePart(axis, angle)
+    if _G.controlledPart and _G.processedParts[_G.controlledPart] then
+        local data = _G.processedParts[_G.controlledPart]
+        if data.bodyGyro and data.bodyGyro.Parent then
+            local currentCFrame = _G.controlledPart.CFrame
+            local rotationCFrame
+            
+            if axis == "X" then
+                rotationCFrame = CFrame.Angles(math.rad(angle), 0, 0)
+            elseif axis == "Y" then
+                rotationCFrame = CFrame.Angles(0, math.rad(angle), 0)
+            elseif axis == "Z" then
+                rotationCFrame = CFrame.Angles(0, 0, math.rad(angle))
+            end
+            
+            data.bodyGyro.CFrame = currentCFrame * rotationCFrame
+        end
+    end
+end
+
+-- 标记控制的零件
+local function MarkControlledPart(part)
+    -- 移除旧标记
+    if _G.controlledPart and _G.controlledPart:FindFirstChild("ControlHighlight") then
+        _G.controlledPart.ControlHighlight:Destroy()
+    end
+    
+    -- 清理旧零件的物理效果
+    if _G.controlledPart and _G.processedParts[_G.controlledPart] then
+        local data = _G.processedParts[_G.controlledPart]
+        if data.bodyVelocity then
+            data.bodyVelocity:Destroy()
+        end
+        if data.bodyGyro then
+            data.bodyGyro:Destroy()
+        end
+        if data.tween then
+            data.tween:Cancel()
+        end
+        _G.processedParts[_G.controlledPart] = nil
+    end
+    
+    -- 设置新控制的零件
+    _G.controlledPart = part
+    
+    -- 添加新标记
+    if part then
+        local highlight = Instance.new("SelectionBox")
+        highlight.Name = "ControlHighlight"
+        highlight.Adornee = part
+        highlight.Color3 = Color3.fromRGB(0, 0, 255) -- 蓝色
+        highlight.LineThickness = 0.05
+        highlight.Parent = part
+        
+        print("已控制: " .. part:GetFullName())
+        
+        -- 如果漂浮功能开启，为新零件添加物理效果
+        if _G.anActivity then
+            ProcessPart(part)
+        end
+    else
+        print("已取消控制")
+    end
+end
+
+-- 使GUI元素可拖动的函数
+local function MakeDraggable(gui)
+    gui.Active = true
+    gui.Draggable = true
+    
+    local dragHandle = Instance.new("Frame")
+    dragHandle.Name = "DragHandle"
+    dragHandle.Size = UDim2.new(0, 20, 0, 20)
+    dragHandle.Position = UDim2.new(1, -20, 0, 0)
+    dragHandle.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+    dragHandle.BorderSizePixel = 0
+    dragHandle.Parent = gui
+    
+    local gripIcon = Instance.new("TextLabel")
+    gripIcon.Name = "GripIcon"
+    gripIcon.Size = UDim2.new(1, 0, 1, 0)
+    gripIcon.Position = UDim2.new(0, 0, 0, 0)
+    gripIcon.Text = "≡"
+    gripIcon.TextColor3 = Color3.new(1, 1, 1)
+    gripIcon.BackgroundTransparency = 1
+    gripIcon.TextSize = 14
+    gripIcon.Parent = dragHandle
+    
+    dragHandle.Active = true
+    dragHandle.Draggable = true
+end
+
+-- 创建手机友好的GUI
+local function CreateMobileGUI()
+    print("开始创建GUI...")
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "MobileFloatingControl"
+    screenGui.Parent = CoreGui
+    
+    -- 主开关按钮
+    local mainButton = Instance.new("TextButton")
+    mainButton.Name = "MainToggle"
+    mainButton.Size = UDim2.new(0, 120, 0, 50)
+    mainButton.Position = UDim2.new(0.5, -60, 0, 10)
+    mainButton.Text = "漂浮: 关闭"
+    mainButton.TextSize = 16
+    mainButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    mainButton.TextColor3 = Color3.new(1, 1, 1)
+    mainButton.Parent = screenGui
+    
+    MakeDraggable(mainButton)
+    print("主按钮创建完成")
+    
+    -- 控制面板
+    local controlPanel = Instance.new("Frame")
+    controlPanel.Name = "ControlPanel"
+    controlPanel.Size = UDim2.new(0, 300, 0, 650) -- 增加高度以容纳更多按钮
+    controlPanel.Position = UDim2.new(0.5, -150, 0.5, -300)
+    controlPanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    controlPanel.BackgroundTransparency = 0.3
+    controlPanel.BorderSizePixel = 0
+    controlPanel.Visible = false
+    controlPanel.Parent = screenGui
+    
+    MakeDraggable(controlPanel)
+    print("控制面板创建完成")
+    
+    -- 速度控制
+    local speedLabel = Instance.new("TextLabel")
+    speedLabel.Name = "SpeedLabel"
+    speedLabel.Size = UDim2.new(1, 0, 0, 40)
+    speedLabel.Position = UDim2.new(0, 0, 0, 10)
+    speedLabel.Text = "速度: " .. _G.floatSpeed
+    speedLabel.TextColor3 = Color3.new(1, 1, 1)
+    speedLabel.BackgroundTransparency = 1
+    speedLabel.TextSize = 20
+    speedLabel.Parent = controlPanel
+    
+    -- 速度增加按钮
+    local speedUpButton = Instance.new("TextButton")
+    speedUpButton.Name = "SpeedUp"
+    speedUpButton.Size = UDim2.new(0, 60, 0, 60)
+    speedUpButton.Position = UDim2.new(0.7, 0, 0, 60)
+    speedUpButton.Text = "+"
+    speedUpButton.TextSize = 30
+    speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    speedUpButton.TextColor3 = Color3.new(1, 1, 1)
+    speedUpButton.Parent = controlPanel
+    
+    -- 速度减少按钮
+    local speedDownButton = Instance.new("TextButton")
+    speedDownButton.Name = "SpeedDown"
+    speedDownButton.Size = UDim2.new(0, 60, 0, 60)
+    speedDownButton.Position = UDim2.new(0.3, 0, 0, 60)
+    speedDownButton.Text = "-"
+    speedDownButton.TextSize = 30
+    speedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    speedDownButton.TextColor3 = Color3.new(1, 1, 1)
+    speedDownButton.Parent = controlPanel
+    
+    -- 方法切换按钮
+    local methodButton = Instance.new("TextButton")
+    methodButton.Name =  "MethodToggle"
+    methodButton.Size = UDim2.new(0, 120, 0, 40)
+    methodButton.Position = UDim2.new(0.5, -60, 0, 130)
+    methodButton.Text = "方法: BodyVelocity"
+    methodButton.TextSize = 14
+    methodButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    methodButton.TextColor3 = Color3.new(1, 1, 1)
+    methodButton.Parent = controlPanel
+    
+    methodButton.MouseButton1Click:Connect(function()
+        _G.useAlternativeMethod = not _G.useAlternativeMethod
+        if _G.useAlternativeMethod then
+            methodButton.Text = "方法: TweenService"
+            methodButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+            print("已切换到TweenService方法")
+        else
+            methodButton.Text = "方法: BodyVelocity"
+            methodButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+            print("已切换到BodyVelocity方法")
+        end
+        
+        -- 重新应用当前设置
+        if _G.anActivity and _G.controlledPart then
+            CleanupParts()
+            ProcessPart(_G.controlledPart)
+        end
+    end)
+    
+    -- 方向控制标题
+    local directionLabel = Instance.new("TextLabel")
+    directionLabel.Name = "DirectionLabel"
+    directionLabel.Size = UDim2.new(1, 0, 0, 40)
+    directionLabel.Position = UDim2.new(0, 0, 0, 180)
+    directionLabel.Text = "移动方向"
+    directionLabel.TextColor3 = Color3.new(1, 1, 1)
+    directionLabel.BackgroundTransparency = 1
+    directionLabel.TextSize = 20
+    directionLabel.Parent = controlPanel
+    
+    -- 方向按钮网格
+    local directions = {
+        {name = "向上", dir = Vector3.new(0, 1, 0), pos = UDim2.new(0.5, -30, 0, 230)},
+        {name = "向下", dir = Vector3.new(0, -1, 0), pos = UDim2.new(0.5, -30, 0, 300)},
+        {name = "向前", dir = Vector3.new(0, 0, 1), pos = UDim2.new(0.2, -30, 0, 265)},
+        {name = "向后", dir = Vector3.new(0, 0, -1), pos = UDim2.new(0.8, -30, 0, 265)},
+        {name = "向左", dir = Vector3.new(-1, 0, 0), pos = UDim2.new(0.05, -30, 0, 265)},
+        {name = "向右", dir = Vector3.new(1, 0, 0), pos = UDim2.new(0.95, -30, 0, 265)}
+    }
+    
+    for i, dirInfo in ipairs(directions) do
+        local button = Instance.new("TextButton")
+        button.Name = dirInfo.name
+        button.Size = UDim2.new(0, 60, 0, 60)
+        button.Position = dirInfo.pos
+        button.Text = dirInfo.name
+        button.TextSize = 14
+        button.BackgroundColor3 = Color3.fromRGB(100, 100, 200) -- 蓝色
+        button.TextColor3 = Color3.new(1, 1, 1)
+        button.Parent = controlPanel
+        
+        button.MouseButton1Click:Connect(function()
+            _G.moveDirection = dirInfo.dir
+            UpdateAllPartsVelocity()
+            
+            local originalColor = button.BackgroundColor3
+            button.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+            delay(0.2, function()
+                button.BackgroundColor3 = originalColor
+            end)
+        end)
+    end
+    
+    -- 停止按钮
+    local stopButton = Instance.new("TextButton")
+    stopButton.Name = "停止"
+    stopButton.Size = UDim2.new(0, 100, 0, 40)
+    stopButton.Position = UDim2.new(0.5, -50, 0, 370)
+    stopButton.Text = "停止移动"
+    stopButton.TextSize = 16
+    stopButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    stopButton.TextColor3 = Color3.new(1, 1, 1)
+    stopButton.Parent = controlPanel
+    
+    stopButton.MouseButton1Click:Connect(function()
+        _G.floatSpeed = 0
+        speedLabel.Text = "速度: " .. _G.floatSpeed
+        UpdateAllPartsVelocity()
+        
+        local originalColor = stopButton.BackgroundColor3
+        stopButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+        delay(0.2, function()
+            stopButton.BackgroundColor3 = originalColor
+        end)
+    end)
+    
+    -- 旋转控制标题
+    local rotationLabel = Instance.new("TextLabel")
+    rotationLabel.Name = "RotationLabel"
+    rotationLabel.Size = UDim2.new(1, 0, 0, 40)
+    rotationLabel.Position = UDim2.new(0, 0, 0, 420)
+    rotationLabel.Text = "旋转控制"
+    rotationLabel.TextColor3 = Color3.new(1, 1, 1)
+    rotationLabel.BackgroundTransparency = 1
+    rotationLabel.TextSize = 20
+    rotationLabel.Parent = controlPanel
+    
+    -- 旋转按钮
+    local rotations = {
+        {name = "左转", axis = "Y", angle = -15, pos = UDim2.new(0.3, -30, 0, 470)},
+        {name = "右转", axis = "Y", angle = 15, pos = UDim2.new(0.7, -30, 0, 470)},
+        {name = "上翻", axis = "X", angle = -15, pos = UDim2.new(0.3, -30, 0, 540)},
+        {name = "下翻", axis = "X", angle = 15, pos = UDim2.new(0.7, -30, 0, 540)}
+    }
+    
+    for i, rotInfo in ipairs(rotations) do
+        local button = Instance.new("TextButton")
+        button.Name = rotInfo.name
+        button.Size = UDim2.new(0, 60, 0, 60)
+        button.Position = rotInfo.pos
+        button.Text = rotInfo.name
+        button.TextSize = 14
+        button.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+        button.TextColor3 = Color3.new(1, 1, 1)
+        button.Parent = controlPanel
+        
+        button.MouseButton1Click:Connect(function()
+            RotatePart(rotInfo.axis, rotInfo.angle)
+            
+            local originalColor = button.BackgroundColor3
+            button.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+            delay(0.2, function()
+                button.BackgroundColor3 = originalColor
+            end)
+        end)
+    end
+    
+    -- 控制模式按钮
+    local controlModeButton = Instance.new("TextButton")
+    controlModeButton.Name = "控制模式"
+    controlModeButton.Size = UDim2.new(0, 100, 0, 40)
+    controlModeButton.Position = UDim2.new(0.5, -50, 0, 610)
+    controlModeButton.Text = "控制: 关闭"
+    controlModeButton.TextSize = 16
+    controlModeButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+    controlModeButton.TextColor3 = Color3.new(1, 1, 1)
+    controlModeButton.Parent = controlPanel
+    
+    -- 关闭面板按钮
+    local closeButton = Instance.new("TextButton")
+    closeButton.Name = "关闭面板"
+    closeButton.Size = UDim2.new(0, 100, 0, 40)
+    closeButton.Position = UDim2.new(0.5, -50, 0, 660)
+    closeButton.Text = "关闭面板"
+    closeButton.TextSize = 16
+    closeButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+    closeButton.TextColor3 = Color3.new(1, 1, 1)
+    closeButton.Parent = controlPanel
+    
+    -- 速度按钮功能
+    speedUpButton.MouseButton1Click:Connect(function()
+        _G.floatSpeed = math.clamp(_G.floatSpeed + 5, 0, 50) -- 允许速度为0
+        speedLabel.Text = "速度: " .. _G.floatSpeed
+        UpdateAllPartsVelocity()
+        
+        local originalColor = speedUpButton.BackgroundColor3
+        speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        delay(0.2, function()
+            speedUpButton.BackgroundColor3 = originalColor
+        end)
+    end)
+    
+    speedDownButton.MouseButton1Click:Connect(function()
+        _G.floatSpeed = math.clamp(_G.floatSpeed - 5, 0, 50) -- 允许速度为0
+        speedLabel.Text = "速度: " .. _G.floatSpeed
+        UpdateAllPartsVelocity()
+        
+        local originalColor = speedDownButton.BackgroundColor3
+        speedDownButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        delay(0.2, function()
+            speedDownButton.BackgroundColor3 = originalColor
+        end)
+    end)
+    
+    -- 控制模式功能
+    controlModeButton.MouseButton1Click:Connect(function()
+        _G.controlMode = not _G.controlMode
+        if _G.controlMode then
+            controlModeButton.Text = "控制: 开启"
+            controlModeButton.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+            print("控制模式已开启，点击一个物体来控制它")
+        else
+            controlModeButton.Text = "控制: 关闭"
+            controlModeButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+            print("控制模式已关闭")
+        end
+    end)
+    
+    -- 打开面板按钮
+    local openPanelButton = Instance.new("TextButton")
+    openPanelButton.Name = "打开控制面板"
+    openPanelButton.Size = UDim2.new(0, 120, 0, 40)
+    openPanelButton.Position = UDim2.new(0.5, -60, 0, 70)
+    openPanelButton.Text = "打开控制面板"
+    openPanelButton.TextSize = 14
+    openPanelButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    openPanelButton.TextColor3 = Color3.new(1, 1, 1)
+    openPanelButton.Visible = true
+    openPanelButton.Parent = screenGui
+    
+    MakeDraggable(openPanelButton)
+    
+    -- 主开关功能
+    mainButton.MouseButton1Click:Connect(function()
+        _G.anActivity = not _G.anActivity
+        if _G.anActivity then
+            if _G.controlledPart then
+                ProcessPart(_G.controlledPart)
+            else
+                warn("请先选择一个物体进行控制")
+                _G.anActivity = false
+                return
+            end
+            
+            mainButton.Text = "漂浮: 开启"
+            mainButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            controlPanel.Visible = true
+            openPanelButton.Visible = false
+            UpdateAllPartsVelocity()
+            print("漂浮功能已开启")
+        else
+            CleanupParts()
+            mainButton.Text = "漂浮: 关闭"
+            mainButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            controlPanel.Visible = false
+            openPanelButton.Visible = true
+            print("漂浮功能已关闭")
+        end
+    end)
+    
+    -- 关闭面板功能
+    closeButton.MouseButton1Click:Connect(function()
+        controlPanel.Visible = false
+        openPanelButton.Visible = true
+        print("控制面板已关闭")
+    end)
+    
+    -- 打开面板功能
+    openPanelButton.MouseButton1Click:Connect(function()
+        controlPanel.Visible = true
+        openPanelButton.Visible = false
+        print("控制面板已打开")
+    end)
+    
+    -- 零件选择功能
+    local function onPartSelected(part)
+        if part:IsA("Part") and not part.Anchored and 
+           not part.Parent:FindFirstChild("Humanoid") and not part.Parent:FindFirstChild("Head") then
+            MarkControlledPart(part)
+            
+            -- 如果漂浮功能已开启，为新零件添加物理效果
+            if _G.anActivity then
+                ProcessPart(part)
+            end
+        end
+    end
+    
+    -- 鼠标点击事件
+    LocalPlayer:GetMouse().Button1Down:Connect(function()
+        if _G.controlMode then
+            local target = LocalPlayer:GetMouse().Target
+          if target then
+                onPartSelected(target)
+            end
+        end
+    end)
+    
+    -- 触摸事件（移动设备）
+    UserInputService.TouchStarted:Connect(function(touch, processed)
+        if not processed and _G.controlMode then
+            local target = LocalPlayer:GetMouse().Target
+            if target then
+                onPartSelected(target)
+            end
+        end
+    end)
+    
+    print("GUI创建完成")
+    return screenGui
+end
+
+-- 添加错误处理
+local success, err = pcall(function()
+    CreateMobileGUI()
+end)
+
+if not success then
+    warn("GUI创建失败: " .. tostring(err))
+    
+    -- 显示错误信息
+    local errorMsg = Instance.new("Message")
+    errorMsg.Text = "漂浮控制GUI初始化失败: " .. tostring(err)
+    errorMsg.Parent = Workspace
+    delay(5, function()
+        errorMsg:Destroy()
+    end)
+end
+
+-- 创建并启动核心循环，这是让物体持续飞行的关键
+local HeartbeatConnection
+HeartbeatConnection = RunService.Heartbeat:Connect(function()
+    pcall(function() -- 使用pcall防止循环中的错误导致整个脚本停止
+        -- 持续处理所有受控零件
+        ProcessAllParts()
+    end)
+end)
+
+-- 添加一个关闭时清理循环的步骤（可选但推荐）
+game:GetService("UserInputService").WindowFocused:Connect(function()
+    -- 当窗口获得焦点时确保循环运行
+    if not HeartbeatConnection then
+        HeartbeatConnection = RunService.Heartbeat:Connect(function()
+            pcall(ProcessAllParts)
+        end)
+    end
+end)
+
+game:GetService("UserInputService").WindowFocusReleased:Connect(function()
+    -- 当窗口失去焦点时暂停循环以节省资源
+    if HeartbeatConnection then
+        HeartbeatConnection:Disconnect()
+        HeartbeatConnection = nil
+    end
+end)
+
+print("漂浮控制脚本已加载成功!")
