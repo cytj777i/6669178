@@ -1,0 +1,258 @@
+pcall(function()
+    if game:GetService("CoreGui"):FindFirstChild("MobileFloatingControl") then
+        game:GetService("CoreGui").MobileFloatingControl:Destroy()
+    end
+end)
+
+pcall(function()
+    if _G.HeartbeatConnection then
+        _G.HeartbeatConnection:Disconnect()
+        _G.HeartbeatConnection = nil
+    end
+end)
+
+_G.processedParts = {}
+_G.floatSpeed = 10
+_G.moveDirection = Vector3.new(0, 1, 0)
+_G.controlledPart = nil
+_G.controlMode = false
+_G.anActivity = false
+_G.useAlternativeMethod = false
+
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+-- 显示启动消息
+local message = Instance.new("Message")
+message.Text = "脚本已启动/创作者XTTT"
+message.Parent = Workspace
+delay(3, function() message:Destroy() end)
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- 设置模拟半径
+local function setupSimulationRadius()
+    local success, err = pcall(function()
+        RunService.Heartbeat:Connect(function()
+            pcall(function()
+                sethiddenproperty(LocalPlayer, "SimulationRadius", 1000)
+                sethiddenproperty(LocalPlayer, "MaxSimulationRadius", 1000)
+            end)
+        end)
+    end)
+    if not success then
+        warn("模拟半径设置失败: " .. tostring(err))
+    end
+end
+
+setupSimulationRadius()
+
+-- 替代方法：使用TweenService移动
+local function ProcessPartWithTween(v)
+    if v == _G.controlledPart and v:IsA("Part") and not v.Anchored then
+        if _G.processedParts[v] and _G.processedParts[v].tween then
+            _G.processedParts[v].tween:Cancel()
+        end
+        local targetPosition = v.Position + (_G.moveDirection.Unit * _G.floatSpeed * 0.1)
+        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(v, tweenInfo, {Position = targetPosition})
+        tween:Play()
+        _G.processedParts[v] = {
+            tween = tween,
+            lastUpdate = tick()
+        }
+    end
+end
+
+-- 处理零件函数
+local function ProcessPart(v)
+    if _G.useAlternativeMethod then
+        ProcessPartWithTween(v)
+        return
+    end
+
+    if v == _G.controlledPart and v:IsA("Part") and not v.Anchored and not v.Parent:FindFirstChild("Humanoid") and not v.Parent:FindFirstChild("Head") then
+        pcall(function() v:SetNetworkOwner(LocalPlayer) end)
+        if _G.processedParts[v] then
+            local existingBV = _G.processedParts[v].bodyVelocity
+            if existingBV and existingBV.Parent then
+                local finalVelocity = _G.moveDirection.Unit * _G.floatSpeed
+                if existingBV.Velocity ~= finalVelocity then
+                    existingBV.Velocity = finalVelocity
+                end
+                return
+            else
+                _G.processedParts[v] = nil
+            end
+        end
+
+        for _, x in next, v:GetChildren() do
+            if x:IsA("BodyAngularVelocity") or x:IsA("BodyForce") or x:IsA("BodyGyro") or 
+               x:IsA("BodyPosition") or x:IsA("BodyThrust") or x:IsA("BodyVelocity") or
+               x:IsA("Torque") then
+                x:Destroy()
+            end
+        end
+
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Parent = v
+        bodyVelocity.Velocity = _G.moveDirection.Unit * _G.floatSpeed
+        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        local bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.Parent = v
+        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bodyGyro.P = 1000
+        bodyGyro.D = 100
+        bodyGyro.CFrame = v.CFrame
+        _G.processedParts[v] = { 
+            bodyVelocity = bodyVelocity,
+            bodyGyro = bodyGyro
+        }
+    end
+end
+
+local function ProcessAllParts()
+    if _G.anActivity and _G.controlledPart then
+        ProcessPart(_G.controlledPart)
+    end
+end
+
+local function CleanupParts()
+    for part, data in pairs(_G.processedParts) do
+        pcall(function() part:SetNetworkOwner(nil) end)
+        if data.bodyVelocity then data.bodyVelocity:Destroy() end
+        if data.bodyGyro then data.bodyGyro:Destroy() end
+        if data.tween then data.tween:Cancel() end
+    end
+    _G.processedParts = {}
+end
+
+local function UpdateAllPartsVelocity()
+    for part, data in pairs(_G.processedParts) do
+        if data.bodyVelocity and data.bodyVelocity.Parent then
+            data.bodyVelocity.Velocity = _G.moveDirection.Unit * _G.floatSpeed
+        end
+    end
+end
+
+local function RotatePart(axis, angle)
+    if _G.controlledPart and _G.processedParts[_G.controlledPart] then
+        local data = _G.processedParts[_G.controlledPart]
+        if data.bodyGyro and data.bodyGyro.Parent then
+            local currentCFrame = _G.controlledPart.CFrame
+            local rotationCFrame
+            if axis == "X" then
+                rotationCFrame = CFrame.Angles(math.rad(angle), 0, 0)
+            elseif axis == "Y" then
+                rotationCFrame = CFrame.Angles(0, math.rad(angle), 0)
+            elseif axis == "Z" then
+                rotationCFrame = CFrame.Angles(0, 0, math.rad(angle))
+            end
+            data.bodyGyro.CFrame = currentCFrame * rotationCFrame
+        end
+    end
+end
+
+local function MarkControlledPart(part)
+    if _G.controlledPart and _G.controlledPart:FindFirstChild("ControlHighlight") then
+        _G.controlledPart.ControlHighlight:Destroy()
+    end
+    if _G.controlledPart and _G.processedParts[_G.controlledPart] then
+        local data = _G.processedParts[_G.controlledPart]
+        if data.bodyVelocity then data.bodyVelocity:Destroy() end
+        if data.bodyGyro then data.bodyGyro:Destroy() end
+        if data.tween then data.tween:Cancel() end
+        pcall(function() _G.controlledPart:SetNetworkOwner(nil) end)
+        _G.processedParts[_G.controlledPart] = nil
+    end
+    _G.controlledPart = part
+    if part then
+        local highlight = Instance.new("SelectionBox")
+        highlight.Name = "ControlHighlight"
+        highlight.Adornee = part
+        highlight.Color3 = Color3.fromRGB(0, 0, 255)
+        highlight.LineThickness = 0.05
+        highlight.Parent = part
+        print("已控制: " .. part:GetFullName())
+        if _G.anActivity then ProcessPart(part) end
+    else
+        print("已取消控制")
+    end
+end
+
+local function MakeDraggable(gui)
+    gui.Active = true
+    gui.Draggable = true
+    local dragHandle = Instance.new("Frame")
+    dragHandle.Name = "DragHandle"
+    dragHandle.Size = UDim2.new(0, 20, 0, 20)
+    dragHandle.Position = UDim2.new(1, -20, 0, 0)
+    dragHandle.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+    dragHandle.BorderSizePixel = 0
+    dragHandle.Parent = gui
+    local gripIcon = Instance.new("TextLabel")
+    gripIcon.Name = "GripIcon"
+    gripIcon.Size = UDim2.new(1, 0, 1, 0)
+    gripIcon.Position = UDim2.new(0, 0, 0, 0)
+    gripIcon.Text = "≡"
+    gripIcon.TextColor3 = Color3.new(1, 1, 1)
+    gripIcon.BackgroundTransparency = 1
+    gripIcon.TextSize = 14
+    gripIcon.Parent = dragHandle
+    dragHandle.Active = true
+    dragHandle.Draggable = true
+end
+
+-- 后面 GUI 创建和原脚本一致，无需改动
+local function CreateMobileGUI()
+    -- ...（保留原脚本）...
+    -- 你的 GUI 创建代码（略，见原始脚本内容）
+end
+
+local success, err = pcall(function()
+    CreateMobileGUI()
+end)
+
+if not success then
+    warn("GUI创建失败: " .. tostring(err))
+    local errorMsg = Instance.new("Message")
+    errorMsg.Text = "漂浮控制GUI初始化失败: " .. tostring(err)
+    errorMsg.Parent = Workspace
+    delay(5, function() errorMsg:Destroy() end)
+end
+
+-- 修复：保存心跳连接到全局，确保可断开
+_G.HeartbeatConnection = RunService.Heartbeat:Connect(function()
+    pcall(function()
+        ProcessAllParts()
+    end)
+end)
+
+game:GetService("UserInputService").WindowFocused:Connect(function()
+    if not _G.HeartbeatConnection then
+        _G.HeartbeatConnection = RunService.Heartbeat:Connect(function()
+            pcall(ProcessAllParts)
+        end)
+    end
+end)
+
+game:GetService("UserInputService").WindowFocusReleased:Connect(function()
+    if _G.HeartbeatConnection then
+        _G.HeartbeatConnection:Disconnect()
+        _G.HeartbeatConnection = nil
+    end
+end)
+
+print("漂浮控制脚本已加载成功!")
