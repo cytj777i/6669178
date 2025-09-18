@@ -180,6 +180,35 @@ local function getTargetPart()
     return part
 end
 
+-- 获取基于视角的方向
+local function getCameraRelativeDirection(direction)
+    local camera = Workspace.CurrentCamera
+    if not camera then return direction end
+    
+    local cameraCFrame = camera.CFrame
+    local relativeDirection = Vector3.new(0, 0, 0)
+    
+    -- 将世界坐标系的方向转换为基于视角的方向
+    if direction == Vector3.new(0, 0, 1) then -- 前
+        relativeDirection = cameraCFrame.LookVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    elseif direction == Vector3.new(0, 0, -1) then -- 后
+        relativeDirection = -cameraCFrame.LookVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    elseif direction == Vector3.new(-1, 0, 0) then -- 左
+        relativeDirection = -cameraCFrame.RightVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    elseif direction == Vector3.new(1, 0, 0) then -- 右
+        relativeDirection = cameraCFrame.RightVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    else
+        -- 上下方向保持不变
+        relativeDirection = direction
+    end
+    
+    return relativeDirection
+end
+
 -- 使GUI元素可拖动的函数
 local function MakeDraggable(gui)
     gui.Active = true
@@ -286,6 +315,7 @@ local function CreateMobileGUI()
     -- 停止翻转按钮
     local stopFlipButton = Instance.new("TextButton")
     stopFlipButton.Name = "StopFlip"
+    stopFlipButton.Name = "StopFlip"
     stopFlipButton.Size = UDim2.new(0, 100, 0, 40)
     stopFlipButton.Position = UDim2.new(0.5, -50, 0, 180)
     stopFlipButton.Text = "停止翻转"
@@ -299,7 +329,7 @@ local function CreateMobileGUI()
     directionLabel.Name = "DirectionLabel"
     directionLabel.Size = UDim2.new(1, 0, 0, 40)
     directionLabel.Position = UDim2.new(0, 0, 0, 230)
-    directionLabel.Text = "移动方向"
+    directionLabel.Text = "移动方向 (基于视角)"
     directionLabel.TextColor3 = Color3.new(1, 1, 1)
     directionLabel.BackgroundTransparency = 1
     directionLabel.TextSize = 20
@@ -327,7 +357,8 @@ local function CreateMobileGUI()
         button.Parent = controlPanel
         
         button.MouseButton1Click:Connect(function()
-            _G.moveDirection = dirInfo.dir
+            -- 使用基于视角的方向
+            _G.moveDirection = getCameraRelativeDirection(dirInfo.dir)
             UpdatePartMovement()
             
             local originalColor = button.BackgroundColor3
