@@ -19,7 +19,7 @@ end
 
 -- 显示作者信息和提示
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "单一物体漂浮控制脚本 - 作者: XTTT\n\n1: 控制的物体可以载着别人一起飞，前提是你的网络流畅并且离控制的物体不远\n\n2: 按了停止翻转后再按任意移动键才能真正停止翻转\n\n3: 只能控制没被固定的物体！！！\n\n4: 此脚本为免费脚本，贩卖者全家死光"
+authorMessage.Text = "单一物体漂浮控制脚本 - 作者: XTTT\n\n1: 控制的物体可以载着别人一起飞，前提是你的网络流畅并且离控制的物体不远\n\n2: 按了停止翻转后再按任意移动键才能真正停止翻转\n\n3: 只能控制没被固定的物体！\n\n4: 此脚本为免费脚本，贩卖者全家死光"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
