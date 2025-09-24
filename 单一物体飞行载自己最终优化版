@@ -19,7 +19,7 @@ end
 
 -- 显示作者信息和提示
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "单一物体漂浮控制脚本 - 作者: XTTT\n\n1: 控制的物体可以载着别人一起飞，前提是你的网络流畅并且离控制的物体不远\n\n2: 按了停止翻转后再按任意移动键才能真正停止翻转\n\n3: 只能控制没被固定的物体！\n\n4: 死亡时要把我这脚本开的所有按钮都关一下，不然复活后会卡bug\n\n5: 此脚本为免费脚本，贩卖者全家死光"
+authorMessage.Text = "单一物体漂浮控制脚本 - 作者: XTTT\n\n1: 控制的物体可以载着别人一起飞，前提是你的网络流畅并且离控制的物体不远\n\n2: 按了停止翻转后再按任意移动键才能真正停止翻转\n\n3: 只能控制没被固定的物体！\n\n4: 死亡时先把我这脚本开的所有按钮都关一下不然复活后会卡bug\n\n5: 此脚本为免费脚本，贩卖者全家死光"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
@@ -45,7 +45,7 @@ local function setupSimulationRadius()
             end)
         end)
     end)
-    
+
     if not success then
         warn("模拟半径设置失败: " .. tostring(err))
     end
@@ -59,14 +59,14 @@ local function createHighlight(part)
         _G.selectedHighlight:Destroy()
         _G.selectedHighlight = nil
     end
-    
+
     local highlight = Instance.new("SelectionBox")
     highlight.Name = "FloatingHighlight"
     highlight.Adornee = part
     highlight.Color3 = Color3.fromRGB(0, 0, 255) -- 蓝色
     highlight.LineThickness = 0.05
     highlight.Parent = part
-    
+
     _G.selectedHighlight = highlight
     return highlight
 end
@@ -82,7 +82,7 @@ end
 -- 处理零件函数
 local function ProcessPart(part)
     if not part or not part.Parent then return end
-    
+
     -- 清除旧的身体力
     for _, child in ipairs(part:GetChildren()) do
         if child:IsA("BodyVelocity") or child:IsA("BodyAngularVelocity") or 
@@ -91,13 +91,13 @@ local function ProcessPart(part)
             child:Destroy()
         end
     end
-    
+
     -- 添加身体力
     local bodyVelocity = Instance.new("BodyVelocity")
     bodyVelocity.Velocity = _G.moveDirection.Unit * _G.floatSpeed
     bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
     bodyVelocity.Parent = part
-    
+
     -- 添加角速度以实现翻转
     local bodyAngularVelocity = Instance.new("BodyAngularVelocity")
     bodyAngularVelocity.AngularVelocity = Vector3.new(_G.flipX, _G.flipY, _G.flipZ) * _G.rotationSpeed
@@ -139,18 +139,22 @@ local function UpdatePartMovement()
     end
 end
 
+-- 检查零件是否可控制
+local function IsPartControllable(part)
+    return part:IsA("Part") and not part.Anchored and not part.Parent:FindFirstChild("Humanoid") and 
+           not part.Parent:FindFirstChild("Head") and part.Parent ~= LocalPlayer.Character
+end
+
 -- 选择零件函数
 local function SelectPart(part)
     -- 检查零件是否可控制
-    if part:IsA("Part") and not part.Anchored and not part.Parent:FindFirstChild("Humanoid") and 
-       not part.Parent:FindFirstChild("Head") and part.Parent ~= LocalPlayer.Character then
-        
+    if IsPartControllable(part) then
         -- 如果已经有选中的零件，取消选择
         if _G.selectedPart and _G.selectedPart ~= part then
             removeHighlight()
             StopPart()
         end
-        
+
         -- 选择新零件
         _G.selectedPart = part
         createHighlight(part)
@@ -175,7 +179,7 @@ local function getTargetPart()
     local mousePos = UserInputService:GetMouseLocation()
     local unitRay = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
     local ray = Ray.new(unitRay.Origin, unitRay.Direction * 1000)
-    
+
     local part, position = Workspace:FindPartOnRay(ray, LocalPlayer.Character)
     return part
 end
@@ -184,10 +188,10 @@ end
 local function getCameraRelativeDirection(direction)
     local camera = Workspace.CurrentCamera
     if not camera then return direction end
-    
+
     local cameraCFrame = camera.CFrame
     local relativeDirection = Vector3.new(0, 0, 0)
-    
+
     -- 将世界坐标系的方向转换为基于视角的方向
     if direction == Vector3.new(0, 0, 1) then -- 前
         relativeDirection = cameraCFrame.LookVector
@@ -205,7 +209,7 @@ local function getCameraRelativeDirection(direction)
         -- 上下方向保持不变
         relativeDirection = direction
     end
-    
+
     return relativeDirection
 end
 
@@ -213,7 +217,7 @@ end
 local function MakeDraggable(gui)
     gui.Active = true
     gui.Draggable = true
-    
+
     local dragHandle = Instance.new("Frame")
     dragHandle.Name = "DragHandle"
     dragHandle.Size = UDim2.new(0, 20, 0, 20)
@@ -221,7 +225,7 @@ local function MakeDraggable(gui)
     dragHandle.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
     dragHandle.BorderSizePixel = 0
     dragHandle.Parent = gui
-    
+
     local gripIcon = Instance.new("TextLabel")
     gripIcon.Name = "GripIcon"
     gripIcon.Size = UDim2.new(1, 0, 1, 0)
@@ -231,7 +235,7 @@ local function MakeDraggable(gui)
     gripIcon.BackgroundTransparency = 1
     gripIcon.TextSize = 14
     gripIcon.Parent = dragHandle
-    
+
     dragHandle.Active = true
     dragHandle.Draggable = true
 end
@@ -241,7 +245,7 @@ local function CreateMobileGUI()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "SingleObjectFloatingControl"
     screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    
+
     -- 选择模式开关按钮 - 移动到右上角
     local selectModeButton = Instance.new("TextButton")
     selectModeButton.Name = "SelectModeToggle"
@@ -252,9 +256,9 @@ local function CreateMobileGUI()
     selectModeButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
     selectModeButton.TextColor3 = Color3.new(1, 1, 1)
     selectModeButton.Parent = screenGui
-    
+
     MakeDraggable(selectModeButton)
-    
+
     -- 控制面板
     local controlPanel = Instance.new("Frame")
     controlPanel.Name = "ControlPanel"
@@ -265,9 +269,9 @@ local function CreateMobileGUI()
     controlPanel.BorderSizePixel = 0
     controlPanel.Visible = false
     controlPanel.Parent = screenGui
-    
+
     MakeDraggable(controlPanel)
-    
+
     -- 速度控制
     local speedLabel = Instance.new("TextLabel")
     speedLabel.Name = "SpeedLabel"
@@ -278,7 +282,7 @@ local function CreateMobileGUI()
     speedLabel.BackgroundTransparency = 1
     speedLabel.TextSize = 20
     speedLabel.Parent = controlPanel
-    
+
     -- 速度增加按钮
     local speedUpButton = Instance.new("TextButton")
     speedUpButton.Name = "SpeedUp"
@@ -289,7 +293,7 @@ local function CreateMobileGUI()
     speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     speedUpButton.TextColor3 = Color3.new(1, 1, 1)
     speedUpButton.Parent = controlPanel
-    
+
     -- 速度减少按钮
     local speedDownButton = Instance.new("TextButton")
     speedDownButton.Name = "SpeedDown"
@@ -300,7 +304,7 @@ local function CreateMobileGUI()
     speedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     speedDownButton.TextColor3 = Color3.new(1, 1, 1)
     speedDownButton.Parent = controlPanel
-    
+
     -- 停止移动按钮
     local stopButton = Instance.new("TextButton")
     stopButton.Name = "Stop"
@@ -311,10 +315,9 @@ local function CreateMobileGUI()
     stopButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     stopButton.TextColor3 = Color3.new(1, 1, 1)
     stopButton.Parent = controlPanel
-    
+
     -- 停止翻转按钮
     local stopFlipButton = Instance.new("TextButton")
-    stopFlipButton.Name = "StopFlip"
     stopFlipButton.Name = "StopFlip"
     stopFlipButton.Size = UDim2.new(0, 100, 0, 40)
     stopFlipButton.Position = UDim2.new(0.5, -50, 0, 180)
@@ -323,7 +326,7 @@ local function CreateMobileGUI()
     stopFlipButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     stopFlipButton.TextColor3 = Color3.new(1, 1, 1)
     stopFlipButton.Parent = controlPanel
-    
+
     -- 方向控制标题
     local directionLabel = Instance.new("TextLabel")
     directionLabel.Name = "DirectionLabel"
@@ -334,7 +337,7 @@ local function CreateMobileGUI()
     directionLabel.BackgroundTransparency = 1
     directionLabel.TextSize = 20
     directionLabel.Parent = controlPanel
-    
+
     -- 方向按钮网格
     local directions = {
         {name = "向上", dir = Vector3.new(0, 1, 0), pos = UDim2.new(0.5, -30, 0, 280)},
@@ -344,7 +347,7 @@ local function CreateMobileGUI()
         {name = "向左", dir = Vector3.new(-1, 0, 0), pos = UDim2.new(0.05, -30, 0, 315)},
         {name = "向右", dir = Vector3.new(1, 0, 0), pos = UDim2.new(0.95, -30, 0, 315)}
     }
-    
+
     for i, dirInfo in ipairs(directions) do
         local button = Instance.new("TextButton")
         button.Name = dirInfo.name
@@ -355,12 +358,12 @@ local function CreateMobileGUI()
         button.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
         button.TextColor3 = Color3.new(1, 1, 1)
         button.Parent = controlPanel
-        
+
         button.MouseButton1Click:Connect(function()
             -- 使用基于视角的方向
             _G.moveDirection = getCameraRelativeDirection(dirInfo.dir)
             UpdatePartMovement()
-            
+
             local originalColor = button.BackgroundColor3
             button.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
             delay(0.2, function()
@@ -368,7 +371,7 @@ local function CreateMobileGUI()
             end)
         end)
     end
-    
+
     -- 翻转控制标题
     local flipLabel = Instance.new("TextLabel")
     flipLabel.Name = "FlipLabel"
@@ -379,7 +382,7 @@ local function CreateMobileGUI()
     flipLabel.BackgroundTransparency = 1
     flipLabel.TextSize = 20
     flipLabel.Parent = controlPanel
-    
+
     -- 翻转按钮
     local flipButtons = {
         {name = "左翻转", axis = "Y", value = -1, pos = UDim2.new(0.2, -30, 0, 440)},
@@ -387,7 +390,7 @@ local function CreateMobileGUI()
         {name = "上翻转", axis = "X", value = 1, pos = UDim2.new(0.5, -30, 0, 400)},
         {name = "下翻转", axis = "X", value = -1, pos = UDim2.new(0.5, -30, 0, 480)}
     }
-    
+
     for i, flipInfo in ipairs(flipButtons) do
         local button = Instance.new("TextButton")
         button.Name = flipInfo.name
@@ -398,7 +401,7 @@ local function CreateMobileGUI()
         button.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
         button.TextColor3 = Color3.new(1, 1, 1)
         button.Parent = controlPanel
-        
+
         button.MouseButton1Click:Connect(function()
             if flipInfo.axis == "X" then
                 _G.flipX = flipInfo.value
@@ -407,9 +410,9 @@ local function CreateMobileGUI()
             elseif flipInfo.axis == "Z" then
                 _G.flipZ = flipInfo.value
             end
-            
+
             UpdatePartMovement()
-            
+
             local originalColor = button.BackgroundColor3
             button.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
             delay(0.2, function()
@@ -417,7 +420,7 @@ local function CreateMobileGUI()
             end)
         end)
     end
-    
+
     -- 关闭面板按钮
     local closeButton = Instance.new("TextButton")
     closeButton.Name = "ClosePanel"
@@ -428,7 +431,7 @@ local function CreateMobileGUI()
     closeButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     closeButton.TextColor3 = Color3.new(1, 1, 1)
     closeButton.Parent = controlPanel
-    
+
     -- 打开面板按钮 - 移动到右上角
     local openPanelButton = Instance.new("TextButton")
     openPanelButton.Name = "OpenPanel"
@@ -440,84 +443,87 @@ local function CreateMobileGUI()
     openPanelButton.TextColor3 = Color3.new(1, 1, 1)
     openPanelButton.Visible = true
     openPanelButton.Parent = screenGui
-    
+
     MakeDraggable(openPanelButton)
-    
+
     -- 选择模式状态
     local selectMode = false
-    
+
     -- 鼠标点击事件处理
     local function onMouseClick()
         if not selectMode then return end
-        
+
         local targetPart = getTargetPart()
         if targetPart then
             if _G.selectedPart == targetPart then
                 -- 如果点击已选择的零件，取消选择
                 DeselectPart()
             else
-                -- 尝试选择新零件
-                local success = SelectPart(targetPart)
-                if not success then
-     -- 连接鼠标点击事件
+                -- 尝试选择新零件（如果不可控制，不会弹出提示）
+                SelectPart(targetPart)
+            end
+        end
+    end
+
+    -- 连接鼠标点击事件
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
-        
+
         if input.UserInputType == Enum.UserInputType.MouseButton1 or 
            input.UserInputType == Enum.UserInputType.Touch then
             onMouseClick()
         end
     end)
-    
+
     -- 速度按钮功能
     speedUpButton.MouseButton1Click:Connect(function()
         _G.floatSpeed = math.clamp(_G.floatSpeed + 5, 1, 50)
         speedLabel.Text = "速度: " .. _G.floatSpeed
         UpdatePartMovement()
-        
+
         local originalColor = speedUpButton.BackgroundColor3
         speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
         delay(0.2, function()
             speedUpButton.BackgroundColor3 = originalColor
         end)
     end)
-    
+
     speedDownButton.MouseButton1Click:Connect(function()
         _G.floatSpeed = math.clamp(_G.floatSpeed - 5, 1, 50)
         speedLabel.Text = "速度: " .. _G.floatSpeed
         UpdatePartMovement()
-        
+
         local originalColor = speedDownButton.BackgroundColor3
         speedDownButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
         delay(0.2, function()
             speedDownButton.BackgroundColor3 = originalColor
         end)
     end)
-    
+
     -- 停止移动按钮功能
     stopButton.MouseButton1Click:Connect(function()
         _G.floatSpeed = 0
         UpdatePartMovement()
         speedLabel.Text = "速度: " .. _G.floatSpeed
-        
+
         local originalColor = stopButton.BackgroundColor3
         stopButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
         delay(0.2, function()
             stopButton.BackgroundColor3 = originalColor
         end)
     end)
-    
+
     -- 停止翻转按钮功能
     stopFlipButton.MouseButton1Click:Connect(function()
         StopFlip()
-        
+
         local originalColor = stopFlipButton.BackgroundColor3
         stopFlipButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
         delay(0.2, function()
             stopFlipButton.BackgroundColor3 = originalColor
         end)
     end)
-    
+
     -- 选择模式开关功能 - 修改为不打开控制面板
     selectModeButton.MouseButton1Click:Connect(function()
         selectMode = not selectMode
@@ -531,21 +537,21 @@ local function CreateMobileGUI()
             print("选择模式已关闭")
         end
     end)
-    
+
     -- 关闭面板功能
     closeButton.MouseButton1Click:Connect(function()
         controlPanel.Visible = false
         openPanelButton.Visible = true
         print("控制面板已关闭")
     end)
-    
+
     -- 打开面板功能
     openPanelButton.MouseButton1Click:Connect(function()
         controlPanel.Visible = true
         openPanelButton.Visible = false
         print("控制面板已打开")
     end)
-    
+
     return screenGui
 end
 
@@ -556,7 +562,7 @@ end)
 
 if not success then
     warn("GUI创建失败: " .. tostring(err))
-    
+
     -- 显示错误信息
     local errorMsg = Instance.new("Message")
     errorMsg.Text = "漂浮控制GUI初始化失败: " .. tostring(err)
