@@ -459,19 +459,7 @@ local function CreateMobileGUI()
                 -- 尝试选择新零件
                 local success = SelectPart(targetPart)
                 if not success then
-                    -- 显示无法选择的消息
-                    local message = Instance.new("Message")
-                    message.Text = "无法控制此物体"
-                    message.Parent = Workspace
-                    delay(2, function()
-                        message:Destroy()
-                    end)
-                end
-            end
-        end
-    end
-    
-    -- 连接鼠标点击事件
+     -- 连接鼠标点击事件
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         
