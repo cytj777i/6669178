@@ -18,7 +18,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障"
+authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n注意2：目前还在更新和优化中，不要乱点新添加的功能"
 authorMessage.Parent = Workspace
 delay(3, function()
     authorMessage:Destroy()
@@ -29,7 +29,7 @@ _G.processedParts = {}
 _G.floatSpeed = 10 -- 默认漂浮速度
 _G.moveDirectionType = "up" -- 默认移动方向类型
 _G.moveDirection = Vector3.new(0, 1, 0) -- 默认向上移动
-_G.fixedMode = false -- 固定模式开关
+_G.fixedMode = false -- 固定模式开关（防止旋转）
 
 -- 死亡状态检测变量
 local isPlayerDead = false
@@ -152,10 +152,34 @@ local function ProcessPart(v)
     if v:IsA("Part") and not v.Anchored and not v.Parent:FindFirstChild("Humanoid") and not v.Parent:FindFirstChild("Head") then
         if _G.processedParts[v] then
             local existingBV = _G.processedParts[v].bodyVelocity
+            local existingBG = _G.processedParts[v].bodyGyro
             if existingBV and existingBV.Parent then
                 local finalVelocity = CalculateMoveDirection() * _G.floatSpeed
                 if existingBV.Velocity ~= finalVelocity then
                     existingBV.Velocity = finalVelocity
+                end
+                
+                -- 更新BodyGyro状态
+                if _G.fixedMode then
+                    if not existingBG or not existingBG.Parent then
+                        -- 创建BodyGyro来防止旋转
+                        local bodyGyro = Instance.new("BodyGyro")
+                        bodyGyro.Parent = v
+                        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                        bodyGyro.P = 1000
+                        bodyGyro.D = 100
+                        _G.processedParts[v].bodyGyro = bodyGyro
+                    end
+                    -- 每帧更新BodyGyro的目标朝向，保持当前朝向
+                    if existingBG then
+                        existingBG.CFrame = v.CFrame
+                    end
+                else
+                    -- 固定模式关闭时移除BodyGyro
+                    if existingBG and existingBG.Parent then
+                        existingBG:Destroy()
+                        _G.processedParts[v].bodyGyro = nil
+                    end
                 end
                 return
             else
@@ -178,7 +202,21 @@ local function ProcessPart(v)
         bodyVelocity.Parent = v
         bodyVelocity.Velocity = CalculateMoveDirection() * _G.floatSpeed
         bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        _G.processedParts[v] = { bodyVelocity = bodyVelocity }
+        
+        -- 如果固定模式开启，添加BodyGyro防止旋转
+        local bodyGyro = nil
+        if _G.fixedMode then
+            bodyGyro = Instance.new("BodyGyro")
+            bodyGyro.Parent = v
+            bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            bodyGyro.P = 1000
+            bodyGyro.D = 100
+        end
+        
+        _G.processedParts[v] = { 
+            bodyVelocity = bodyVelocity, 
+            bodyGyro = bodyGyro 
+        }
     end
 end
 
@@ -227,6 +265,9 @@ local function CleanupParts()
         if data.bodyVelocity then
             data.bodyVelocity:Destroy()
         end
+        if data.bodyGyro then
+            data.bodyGyro:Destroy()
+        end
     end
     _G.processedParts = {}
 
@@ -247,19 +288,15 @@ local function UpdateAllPartsVelocity()
         return
     end
     
-    -- 如果固定模式开启，将所有物体速度设为零
-    if _G.fixedMode then
-        for part, data in pairs(_G.processedParts) do
-            if data.bodyVelocity and data.bodyVelocity.Parent then
-                data.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            end
+    local direction = CalculateMoveDirection()
+    for part, data in pairs(_G.processedParts) do
+        if data.bodyVelocity and data.bodyVelocity.Parent then
+            data.bodyVelocity.Velocity = direction * _G.floatSpeed
         end
-    else
-        local direction = CalculateMoveDirection()
-        for part, data in pairs(_G.processedParts) do
-            if data.bodyVelocity and data.bodyVelocity.Parent then
-                data.bodyVelocity.Velocity = direction * _G.floatSpeed
-            end
+        
+        -- 如果固定模式开启，更新BodyGyro来防止旋转
+        if _G.fixedMode and data.bodyGyro and data.bodyGyro.Parent then
+            data.bodyGyro.CFrame = part.CFrame
         end
     end
 end
@@ -270,25 +307,45 @@ local function StopAllParts()
     UpdateAllPartsVelocity()
 end
 
--- 固定所有物体
-local function FixAllParts()
+-- 防止物体旋转
+local function PreventRotation()
     _G.fixedMode = true
+    -- 为所有已处理的零件添加BodyGyro
+    for part, data in pairs(_G.processedParts) do
+        if data.bodyVelocity and data.bodyVelocity.Parent then
+            if not data.bodyGyro or not data.bodyGyro.Parent then
+                local bodyGyro = Instance.new("BodyGyro")
+                bodyGyro.Parent = part
+                bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                bodyGyro.P = 1000
+                bodyGyro.D = 100
+                data.bodyGyro = bodyGyro
+            end
+        end
+    end
     UpdateAllPartsVelocity()
 end
 
--- 解除固定所有物体
-local function UnfixAllParts()
+-- 允许物体旋转
+local function AllowRotation()
     _G.fixedMode = false
+    -- 移除所有BodyGyro
+    for part, data in pairs(_G.processedParts) do
+        if data.bodyGyro and data.bodyGyro.Parent then
+            data.bodyGyro:Destroy()
+            data.bodyGyro = nil
+        end
+    end
     UpdateAllPartsVelocity()
 end
 
--- 切换固定模式
-local function ToggleFixedMode()
+-- 切换防旋转模式
+local function ToggleRotationPrevention()
     if _G.fixedMode then
-        UnfixAllParts()
+        AllowRotation()
         return false
     else
-        FixAllParts()
+        PreventRotation()
         return true
     end
 end
@@ -400,12 +457,12 @@ local function CreateMobileGUI()
     stopButton.TextColor3 = Color3.new(1, 1, 1)
     stopButton.Parent = controlPanel
 
-    -- 固定物体按钮
+    -- 防止旋转按钮
     local fixButton = Instance.new("TextButton")
-    fixButton.Name = "FixParts"
+    fixButton.Name = "FixRotation"
     fixButton.Size = UDim2.new(0, 120, 0, 40)
     fixButton.Position = UDim2.new(0.5, -60, 0, 180)
-    fixButton.Text = "固定物体: 关闭"
+    fixButton.Text = "防止旋转: 关闭"
     fixButton.TextSize = 16
     fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     fixButton.TextColor3 = Color3.new(1, 1, 1)
@@ -550,12 +607,12 @@ local function CreateMobileGUI()
         end)
     end)
 
-    -- 固定物体按钮功能
+    -- 防止旋转按钮功能
     fixButton.MouseButton1Click:Connect(function()
         -- 如果玩家死亡，不允许操作
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
-            warningMsg.Text = "玩家死亡时无法操作固定功能"
+            warningMsg.Text = "玩家死亡时无法操作防旋转功能"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -563,15 +620,15 @@ local function CreateMobileGUI()
             return
         end
         
-        local newFixedState = ToggleFixedMode()
+        local newFixedState = ToggleRotationPrevention()
         if newFixedState then
-            fixButton.Text = "固定物体: 开启"
+            fixButton.Text = "防止旋转: 开启"
             fixButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-            print("固定模式已开启")
+            print("防旋转模式已开启")
         else
-            fixButton.Text = "固定物体: 关闭"
+            fixButton.Text = "防止旋转: 关闭"
             fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
-            print("固定模式已关闭")
+            print("防旋转模式已关闭")
         end
     end)
 
