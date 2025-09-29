@@ -18,7 +18,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n注意2：目前还在更新和优化中，不要乱点新添加的功能"
+authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n注意2：死亡前请关闭此脚本开启的所有按钮不然会出故障\n（我有尝试修复这个故障但是失败了）"
 authorMessage.Parent = Workspace
 delay(3, function()
     authorMessage:Destroy()
