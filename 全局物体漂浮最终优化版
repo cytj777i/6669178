@@ -82,18 +82,6 @@ local function setupDeathDetection()
                     mainButton.Text = "漂浮: 关闭"
                     mainButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
                 end
-                
-                -- 显示死亡提示
-                local deathMessage = Instance.new("Message")
-                deathMessage.Text = "检测到玩家死亡，已自动关闭漂浮功能"
-                deathMessage.Parent = Workspace
-                delay(3, function()
-                    deathMessage:Destroy()
-                end)
-            end
-        end)
-    end
-    
     -- 监听角色添加事件
     if characterAddedConnection then
         characterAddedConnection:Disconnect()
