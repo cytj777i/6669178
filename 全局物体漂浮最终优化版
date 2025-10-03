@@ -39,6 +39,7 @@ local humanoidDiedConnection = nil
 -- GUI引用
 local mainButton = nil
 local controlPanel = nil
+local fixButton = nil -- 防止旋转按钮的全局引用
 
 -- 设置模拟半径
 local function setupSimulationRadius()
@@ -81,6 +82,21 @@ local function setupDeathDetection()
             if anActivity then
                 anActivity = false
                 CleanupParts()
+                -- 更新主按钮状态
+                if mainButton then
+                    mainButton.Text = "漂浮: 关闭"
+                    mainButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                end
+            end
+            
+            -- 自动关闭防止旋转模式
+            if _G.fixedMode then
+                AllowRotation()
+                -- 更新防止旋转按钮状态
+                if fixButton then
+                    fixButton.Text = "防止旋转: 关闭"
+                    fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+                end
             end
         end)
     end
@@ -448,14 +464,14 @@ local function CreateMobileGUI()
     stopButton.TextColor3 = Color3.new(1, 1, 1)
     stopButton.Parent = controlPanel
 
-    -- 防止旋转按钮
-    local fixButton = Instance.new("TextButton")
+    -- 防止旋转按钮 - 修复：初始状态为关闭
+    fixButton = Instance.new("TextButton")
     fixButton.Name = "FixRotation"
     fixButton.Size = UDim2.new(0, 120, 0, 40)
     fixButton.Position = UDim2.new(0.5, -60, 0, 180)
     fixButton.Text = "防止旋转: 关闭"
     fixButton.TextSize = 16
-    fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+    fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100) -- 初始为红色，表示关闭
     fixButton.TextColor3 = Color3.new(1, 1, 1)
     fixButton.Parent = controlPanel
 
@@ -598,34 +614,39 @@ local function CreateMobileGUI()
         end)
     end)
 
-    -- 防止旋转按钮功能
-    local newFixedState = ToggleRotationPrevention()
+    -- 防止旋转按钮功能 - 修复：只在点击时切换，初始状态为关闭
+    fixButton.MouseButton1Click:Connect(function()
+        -- 如果玩家死亡，不允许操作
+        if isPlayerDead then
+            local warningMsg = Instance.new("Message")
+            warningMsg.Text = "玩家死亡时无法操作防旋转功能"
+            warningMsg.Parent = Workspace
+            delay(2, function()
+                warningMsg:Destroy()
+            end)
+            return
+        end
 
-if isPlayerDead then
-    if newFixedState then  -- 死亡时尝试开启功能
-        local warningMsg = Instance.new("Message")
-        warningMsg.Text = "玩家死亡时无法开启防旋转功能"
-        warningMsg.Parent = Workspace
-        delay(2, function()
-            warningMsg:Destroy()
+        -- 切换防止旋转状态
+        local newFixedState = ToggleRotationPrevention()
+
+        -- 更新UI
+        if newFixedState then
+            fixButton.Text = "防止旋转: 开启"
+            fixButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+            print("防旋转模式已开启")
+        else
+            fixButton.Text = "防止旋转: 关闭"
+            fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+            print("防旋转模式已关闭")
+        end
+
+        local originalColor = fixButton.BackgroundColor3
+        fixButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+        delay(0.2, function()
+            fixButton.BackgroundColor3 = originalColor
         end)
-        -- 恢复到关闭状态
-        ToggleRotationPrevention()  -- 再次调用以切换回关闭状态
-        newFixedState = false
-    end
-    -- 如果是关闭操作，不显示警告，允许关闭
-end
-
--- 更新UI
-if newFixedState then
-    fixButton.Text = "防止旋转: 开启"
-    fixButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    print("防旋转模式已开启")
-else
-    fixButton.Text = "防止旋转: 关闭"
-    fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
-    print("防旋转模式已关闭")
-end
+    end)
 
     -- 打开面板按钮 - 移动到右上角，在主按钮下方
     local openPanelButton = Instance.new("TextButton")
