@@ -513,7 +513,6 @@ local function CreateMobileGUI()
             -- 如果玩家死亡，不允许更改方向
             if isPlayerDead then
                 local warningMsg = Instance.new("Message")
-                warningMsg.Text = "玩家死亡时无法更改漂浮方向"
                 warningMsg.Parent = Workspace
                 delay(2, function()
                     warningMsg:Destroy()
@@ -548,7 +547,6 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许更改速度
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
-            warningMsg.Text = "玩家死亡时无法更改漂浮速度"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -572,7 +570,6 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许更改速度
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
-            warningMsg.Text = "玩家死亡时无法更改漂浮速度"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -596,7 +593,6 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许操作
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
-            warningMsg.Text = "玩家死亡时无法操作漂浮功能"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -619,7 +615,6 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许操作
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
-            warningMsg.Text = "玩家死亡时无法操作防旋转功能"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -678,7 +673,6 @@ local function CreateMobileGUI()
         -- 如果玩家死亡且尝试开启，则拒绝
         if isPlayerDead and not anActivity then
             local warningMsg = Instance.new("Message")
-            warningMsg.Text = "玩家死亡时无法开启漂浮功能"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
