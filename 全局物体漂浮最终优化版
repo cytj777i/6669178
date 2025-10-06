@@ -18,7 +18,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n制作灵感来源于反重力状态脚本\n注意1：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n注意2：死亡前最好关闭此脚本开启的所有按钮，不然复活后可能出现故障\n注意3：部分服务器可能出现人物一起漂浮现象\n希望大家可以多在自然灾害里用我做的脚本，我平常都会去玩自然灾害"
+authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n制作灵感来源于反重力状态脚本\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n希望大家可以多在自然灾害里用我做的脚本，我平常都会去玩自然灾害"
 authorMessage.Parent = Workspace
 delay(3, function()
     authorMessage:Destroy()
@@ -37,9 +37,11 @@ local characterAddedConnection = nil
 local humanoidDiedConnection = nil
 
 -- GUI引用
+local screenGui = nil
 local mainButton = nil
 local controlPanel = nil
 local fixButton = nil -- 防止旋转按钮的全局引用
+local openPanelButton = nil
 
 -- 设置模拟半径
 local function setupSimulationRadius()
@@ -59,12 +61,42 @@ end
 
 setupSimulationRadius()
 
--- 玩家死亡状态检测函数
-local function setupDeathDetection()
+-- 玩家死亡状态检测和自动重连函数
+local function setupDeathDetectionAndReconnect()
     local function onCharacterAdded(character)
         -- 重置死亡状态
         isPlayerDead = false
         print("角色重生，死亡状态重置")
+        
+        -- 重新设置模拟半径
+        setupSimulationRadius()
+        
+        -- 强制重置所有状态
+        anActivity = false
+        _G.fixedMode = false
+        CleanupParts()
+        
+        -- 确保GUI存在且状态正确
+        if screenGui and screenGui.Parent then
+            -- GUI已经存在，确保按钮状态正确
+            if mainButton then
+                mainButton.Text = "漂浮: 关闭"
+                mainButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            end
+            if fixButton then
+                fixButton.Text = "防止旋转: 关闭"
+                fixButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+            end
+            if controlPanel then
+                controlPanel.Visible = false
+            end
+            if openPanelButton then
+                openPanelButton.Visible = true
+            end
+        else
+            -- GUI不存在，重新创建
+            CreateMobileGUI()
+        end
 
         -- 等待Humanoid加载
         local humanoid = character:WaitForChild("Humanoid")
@@ -88,7 +120,7 @@ local function setupDeathDetection()
                     mainButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
                 end
             end
-            
+
             -- 自动关闭防止旋转模式
             if _G.fixedMode then
                 AllowRotation()
@@ -112,6 +144,31 @@ local function setupDeathDetection()
     if LocalPlayer.Character then
         onCharacterAdded(LocalPlayer.Character)
     end
+end
+
+-- 检查零件是否属于玩家
+local function isPlayerPart(part)
+    -- 如果零件有父级，检查父级是否是玩家角色
+    if part.Parent then
+        -- 检查是否是当前玩家角色
+        if part.Parent == LocalPlayer.Character then
+            return true
+        end
+        
+        -- 检查是否是其他玩家角色
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character and part:IsDescendantOf(player.Character) then
+                return true
+            end
+        end
+        
+        -- 检查是否包含人体部件（Humanoid, Head等）
+        if part.Parent:FindFirstChild("Humanoid") or part.Parent:FindFirstChild("Head") then
+            return true
+        end
+    end
+    
+    return false
 end
 
 -- 根据视角计算移动方向
@@ -156,7 +213,12 @@ local function ProcessPart(v)
         return
     end
 
-    if v:IsA("Part") and not v.Anchored and not v.Parent:FindFirstChild("Humanoid") and not v.Parent:FindFirstChild("Head") then
+    -- 检查零件是否属于玩家，如果是则跳过
+    if isPlayerPart(v) then
+        return
+    end
+
+    if v:IsA("Part") and not v.Anchored then
         if _G.processedParts[v] then
             local existingBV = _G.processedParts[v].bodyVelocity
             local existingBG = _G.processedParts[v].bodyGyro
@@ -263,7 +325,10 @@ end
 
 Workspace.DescendantAdded:Connect(function(v)
     if anActivity and not isPlayerDead then
-        ProcessPart(v)
+        -- 检查新添加的零件是否属于玩家
+        if not isPlayerPart(v) then
+            ProcessPart(v)
+        end
     end
 end)
 
@@ -388,8 +453,9 @@ end
 local function CreateMobileGUI()
     print("开始创建GUI...")
 
-    local screenGui = Instance.new("ScreenGui")
+    screenGui = Instance.new("ScreenGui")
     screenGui.Name = "MobileFloatingControl"
+    screenGui.ResetOnSpawn = false  -- 重要：防止重生时GUI消失
     screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
     -- 主开关按钮 - 移动到右上角
@@ -513,6 +579,7 @@ local function CreateMobileGUI()
             -- 如果玩家死亡，不允许更改方向
             if isPlayerDead then
                 local warningMsg = Instance.new("Message")
+                warningMsg.Text = "死亡状态下无法更改方向！"
                 warningMsg.Parent = Workspace
                 delay(2, function()
                     warningMsg:Destroy()
@@ -547,6 +614,7 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许更改速度
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
+            warningMsg.Text = "死亡状态下无法更改速度！"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -570,6 +638,7 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许更改速度
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
+            warningMsg.Text = "死亡状态下无法更改速度！"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -593,6 +662,7 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许操作
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
+            warningMsg.Text = "死亡状态下无法操作！"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -615,6 +685,7 @@ local function CreateMobileGUI()
         -- 如果玩家死亡，不允许操作
         if isPlayerDead then
             local warningMsg = Instance.new("Message")
+            warningMsg.Text = "死亡状态下无法操作！"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -644,7 +715,7 @@ local function CreateMobileGUI()
     end)
 
     -- 打开面板按钮 - 移动到右上角，在主按钮下方
-    local openPanelButton = Instance.new("TextButton")
+    openPanelButton = Instance.new("TextButton")
     openPanelButton.Name = "OpenPanel"
     openPanelButton.Size = UDim2.new(0, 120, 0, 40)
     openPanelButton.Position = UDim2.new(1, -130, 0, 70) -- 右上角位置，在主按钮下方
@@ -673,6 +744,7 @@ local function CreateMobileGUI()
         -- 如果玩家死亡且尝试开启，则拒绝
         if isPlayerDead and not anActivity then
             local warningMsg = Instance.new("Message")
+            warningMsg.Text = "死亡状态下无法开启漂浮！"
             warningMsg.Parent = Workspace
             delay(2, function()
                 warningMsg:Destroy()
@@ -716,20 +788,19 @@ end
 -- 添加错误处理
 local success, err = pcall(function()
     CreateMobileGUI()
-    -- 设置死亡检测
-    setupDeathDetection()
+    -- 设置死亡检测和自动重连
+    setupDeathDetectionAndReconnect()
 end)
 
 if not success then
     warn("GUI创建失败: " .. tostring(err))
 
-    -- 显示错误信息
+    -- 显示78错误信息
     local errorMsg = Instance.new("Message")
-    errorMsg.Text = "漂浮控制GUI初始化失败: " .. tostring(err)
     errorMsg.Parent = Workspace
     delay(5, function()
         errorMsg:Destroy()
     end)
 end
 
-print("全局物体漂浮脚本已加载成功!")
+print("全局物体漂浮脚本已加载成功")
