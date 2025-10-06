@@ -20,7 +20,7 @@ end
 local authorMessage = Instance.new("Message")
 authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n制作灵感来源于反重力状态脚本\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n希望大家可以多在自然灾害里用我做的脚本，我平常都会去玩自然灾害"
 authorMessage.Parent = Workspace
-delay(3, function()
+delay(5, function()
     authorMessage:Destroy()
 end)
 
