@@ -35,6 +35,30 @@ _G.flipY = 0
 _G.flipZ = 0
 _G.rotationSpeed = 1
 
+-- 角色死亡自动重连功能
+local function setupAutoReconnect()
+    LocalPlayer.CharacterAdded:Connect(function(character)
+        -- 等待角色完全加载
+        character:WaitForChild("Humanoid")
+        
+        -- 重新设置模拟半径
+        setupSimulationRadius()
+        
+        print("角色已重生，漂浮控制脚本已自动重新连接")
+    end)
+    
+    LocalPlayer.CharacterRemoving:Connect(function()
+        -- 角色死亡时安全地停止控制
+        if _G.selectedPart then
+            pcall(function()
+                StopPart()
+                removeHighlight()
+            end)
+            _G.selectedPart = nil
+        end
+    end)
+end
+
 -- 设置模拟半径
 local function setupSimulationRadius()
     local success, err = pcall(function()
@@ -52,6 +76,7 @@ local function setupSimulationRadius()
 end
 
 setupSimulationRadius()
+setupAutoReconnect() -- 启动自动重连
 
 -- 创建高亮效果
 local function createHighlight(part)
@@ -244,6 +269,7 @@ end
 local function CreateMobileGUI()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "SingleObjectFloatingControl"
+    screenGui.ResetOnSpawn = false  -- 防止重生时GUI消失
     screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
     -- 选择模式开关按钮 - 移动到右上角
@@ -572,4 +598,4 @@ if not success then
     end)
 end
 
-print("单一物体漂浮控制脚本已加载成功!")
+print("单一物体漂浮控制脚本已加载成功! 支持死亡自动重连。")
