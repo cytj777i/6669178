@@ -19,7 +19,7 @@ end
 
 -- 显示作者信息和提示
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "单一物体漂浮控制脚本 - 作者: XTTT\n1: 控制的物体可以载着别人一起飞，前提是你的网络流畅并且离控制的物体不远\n2: 按了停止翻转后再按任意移动键才能真正停止翻转\n3: 只能控制没被固定的物体！\n4: 只有能被蓝色框架标记的才是“可能”能控制的物体，物体太大控制时可能控制不了\n5: 最好不要短时间内连续点击并长按此脚本的控制按键，会出现颜色故障\n6: 此脚本为免费脚本，禁止贩卖\n希望大家可以多在自然灾害里用我做的脚本，我平常都会去玩自然灾害\n偶遇带你上视频"
+authorMessage.Text = "单一物体漂浮控制脚本 - 作者: XTTT\n1: 控制的物体可以载着别人一起飞，前提是你的网络流畅并且离控制的物体不远\n2: 按了停止翻转后再按任意移动键才能真正停止翻转\n3: 只能控制没被固定的物体！\n4: 只有能被蓝色框架标记的才是“可能”能控制的物体，物体太大控制时可能控制不了\n5: 最好不要短时间内连续点击并长按此脚本的控制按键，会出现颜色故障\n6: 此脚本为免费脚本，禁止贩卖\n希望大家可以多在自然灾害里用我做的脚本，我平常都会去玩自然灾害\n更新了控制面板ui大小调节功能，我视频就几百赞这脚本能泛滥我吃"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
@@ -40,13 +40,13 @@ local function setupAutoReconnect()
     LocalPlayer.CharacterAdded:Connect(function(character)
         -- 等待角色完全加载
         character:WaitForChild("Humanoid")
-        
+
         -- 重新设置模拟半径
         setupSimulationRadius()
-        
+
         print("角色已重生，漂浮控制脚本已自动重新连接")
     end)
-    
+
     LocalPlayer.CharacterRemoving:Connect(function()
         -- 角色死亡时安全地停止控制
         if _G.selectedPart then
@@ -288,8 +288,8 @@ local function CreateMobileGUI()
     -- 控制面板
     local controlPanel = Instance.new("Frame")
     controlPanel.Name = "ControlPanel"
-    controlPanel.Size = UDim2.new(0, 300, 0, 550) -- 增加高度以容纳新按钮
-    controlPanel.Position = UDim2.new(0.5, -150, 0.5, -275)
+    controlPanel.Size = UDim2.new(0, 300, 0, 650) -- 增加高度以容纳新按钮
+    controlPanel.Position = UDim2.new(0.5, -150, 0.5, -325)
     controlPanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     controlPanel.BackgroundTransparency = 0.3
     controlPanel.BorderSizePixel = 0
@@ -297,6 +297,41 @@ local function CreateMobileGUI()
     controlPanel.Parent = screenGui
 
     MakeDraggable(controlPanel)
+
+    -- UI缩放控制
+    local uiScale = Instance.new("UIScale")
+    uiScale.Scale = 1.0
+    uiScale.Parent = controlPanel
+
+    local scaleLabel = Instance.new("TextLabel")
+    scaleLabel.Name = "ScaleLabel"
+    scaleLabel.Size = UDim2.new(1, 0, 0, 40)
+    scaleLabel.Position = UDim2.new(0, 0, 0, 570)
+    scaleLabel.Text = "UI大小: 1.0"
+    scaleLabel.TextColor3 = Color3.new(1, 1, 1)
+    scaleLabel.BackgroundTransparency = 1
+    scaleLabel.TextSize = 20
+    scaleLabel.Parent = controlPanel
+
+    local scaleUpButton = Instance.new("TextButton")
+    scaleUpButton.Name = "ScaleUp"
+    scaleUpButton.Size = UDim2.new(0, 60, 0, 60)
+    scaleUpButton.Position = UDim2.new(0.7, 0, 0, 600)
+    scaleUpButton.Text = "+"
+    scaleUpButton.TextSize = 30
+    scaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    scaleUpButton.TextColor3 = Color3.new(1, 1, 1)
+    scaleUpButton.Parent = controlPanel
+
+    local scaleDownButton = Instance.new("TextButton")
+    scaleDownButton.Name = "ScaleDown"
+    scaleDownButton.Size = UDim2.new(0, 60, 0, 60)
+    scaleDownButton.Position = UDim2.new(0.3, 0, 0, 600)
+    scaleDownButton.Text = "-"
+    scaleDownButton.TextSize = 30
+    scaleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    scaleDownButton.TextColor3 = Color3.new(1, 1, 1)
+    scaleDownButton.Parent = controlPanel
 
     -- 速度控制
     local speedLabel = Instance.new("TextLabel")
@@ -499,6 +534,27 @@ local function CreateMobileGUI()
            input.UserInputType == Enum.UserInputType.Touch then
             onMouseClick()
         end
+    end)
+
+    -- UI缩放功能
+    scaleUpButton.MouseButton1Click:Connect(function()
+        uiScale.Scale = math.min(uiScale.Scale + 0.1, 1.5)
+        scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
+        local originalColor = scaleUpButton.BackgroundColor3
+        scaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        delay(0.2, function()
+            scaleUpButton.BackgroundColor3 = originalColor
+        end)
+    end)
+
+    scaleDownButton.MouseButton1Click:Connect(function()
+        uiScale.Scale = math.max(uiScale.Scale - 0.1, 0.5)
+        scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
+        local originalColor = scaleDownButton.BackgroundColor3
+        scaleDownButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        delay(0.2, function()
+            scaleDownButton.BackgroundColor3 = originalColor
+        end)
     end)
 
     -- 速度按钮功能
