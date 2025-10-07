@@ -18,7 +18,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n制作灵感来源于反重力状态脚本\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n希望大家可以多在自然灾害里用我做的脚本，我平常都会去玩自然灾害"
+authorMessage.Text = "全局物体漂浮脚本 - 作者: XTTT\n此脚本为免费脚本，禁止贩卖\n制作灵感来源于反重力状态脚本\n注意：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n希望大家可以多在自然灾害里用我做的脚本，我平常都会去玩自然灾害\n更新了控制面板ui大小调节功能"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
@@ -67,15 +67,15 @@ local function setupDeathDetectionAndReconnect()
         -- 重置死亡状态
         isPlayerDead = false
         print("角色重生，死亡状态重置")
-        
+
         -- 重新设置模拟半径
         setupSimulationRadius()
-        
+
         -- 强制重置所有状态
         anActivity = false
         _G.fixedMode = false
         CleanupParts()
-        
+
         -- 确保GUI存在且状态正确
         if screenGui and screenGui.Parent then
             -- GUI已经存在，确保按钮状态正确
@@ -154,20 +154,20 @@ local function isPlayerPart(part)
         if part.Parent == LocalPlayer.Character then
             return true
         end
-        
+
         -- 检查是否是其他玩家角色
         for _, player in ipairs(Players:GetPlayers()) do
             if player.Character and part:IsDescendantOf(player.Character) then
                 return true
             end
         end
-        
+
         -- 检查是否包含人体部件（Humanoid, Head等）
         if part.Parent:FindFirstChild("Humanoid") or part.Parent:FindFirstChild("Head") then
             return true
         end
     end
-    
+
     return false
 end
 
@@ -475,8 +475,8 @@ local function CreateMobileGUI()
     -- 控制面板
     controlPanel = Instance.new("Frame")
     controlPanel.Name = "ControlPanel"
-    controlPanel.Size = UDim2.new(0, 300, 0, 500) -- 增加高度以容纳新按钮
-    controlPanel.Position = UDim2.new(0.5, -150, 0.5, -250)
+    controlPanel.Size = UDim2.new(0, 300, 0, 600) -- 增加高度以容纳新按钮
+    controlPanel.Position = UDim2.new(0.5, -150, 0.5, -300)
     controlPanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     controlPanel.BackgroundTransparency = 0.3
     controlPanel.BorderSizePixel = 0
@@ -485,6 +485,41 @@ local function CreateMobileGUI()
 
     MakeDraggable(controlPanel)
     print("控制面板创建完成")
+
+    -- UI缩放控制
+    local uiScale = Instance.new("UIScale")
+    uiScale.Scale = 1.0
+    uiScale.Parent = controlPanel
+
+    local scaleLabel = Instance.new("TextLabel")
+    scaleLabel.Name = "ScaleLabel"
+    scaleLabel.Size = UDim2.new(1, 0, 0, 40)
+    scaleLabel.Position = UDim2.new(0, 0, 0, 520)
+    scaleLabel.Text = "UI大小: 1.0"
+    scaleLabel.TextColor3 = Color3.new(1, 1, 1)
+    scaleLabel.BackgroundTransparency = 1
+    scaleLabel.TextSize = 20
+    scaleLabel.Parent = controlPanel
+
+    local scaleUpButton = Instance.new("TextButton")
+    scaleUpButton.Name = "ScaleUp"
+    scaleUpButton.Size = UDim2.new(0, 60, 0, 60)
+    scaleUpButton.Position = UDim2.new(0.7, 0, 0, 550)
+    scaleUpButton.Text = "+"
+    scaleUpButton.TextSize = 30
+    scaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    scaleUpButton.TextColor3 = Color3.new(1, 1, 1)
+    scaleUpButton.Parent = controlPanel
+
+    local scaleDownButton = Instance.new("TextButton")
+    scaleDownButton.Name = "ScaleDown"
+    scaleDownButton.Size = UDim2.new(0, 60, 0, 60)
+    scaleDownButton.Position = UDim2.new(0.3, 0, 0, 550)
+    scaleDownButton.Text = "-"
+    scaleDownButton.TextSize = 30
+    scaleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    scaleDownButton.TextColor3 = Color3.new(1, 1, 1)
+    scaleDownButton.Parent = controlPanel
 
     -- 速度控制
     local speedLabel = Instance.new("TextLabel")
@@ -781,6 +816,27 @@ local function CreateMobileGUI()
         print("控制面板已打开")
     end)
 
+    -- UI缩放功能
+    scaleUpButton.MouseButton1Click:Connect(function()
+        uiScale.Scale = math.min(uiScale.Scale + 0.1, 1.5)
+        scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
+        local originalColor = scaleUpButton.BackgroundColor3
+        scaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        delay(0.2, function()
+            scaleUpButton.BackgroundColor3 = originalColor
+        end)
+    end)
+
+    scaleDownButton.MouseButton1Click:Connect(function()
+        uiScale.Scale = math.max(uiScale.Scale - 0.1, 0.5)
+        scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
+        local originalColor = scaleDownButton.BackgroundColor3
+        scaleDownButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        delay(0.2, function()
+            scaleDownButton.BackgroundColor3 = originalColor
+        end)
+    end)
+
     print("GUI创建完成")
     return screenGui
 end
@@ -795,7 +851,7 @@ end)
 if not success then
     warn("GUI创建失败: " .. tostring(err))
 
-    -- 显示78错误信息
+    -- 显示个78的错误信息
     local errorMsg = Instance.new("Message")
     errorMsg.Parent = Workspace
     delay(5, function()
