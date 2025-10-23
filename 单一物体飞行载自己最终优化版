@@ -557,30 +557,30 @@ local function CreateMobileGUI()
         end)
     end)
 
-    -- 速度按钮功能
-    speedUpButton.MouseButton1Click:Connect(function()
-        _G.floatSpeed = math.clamp(_G.floatSpeed + 5, 1, 50)
-        speedLabel.Text = "速度: " .. _G.floatSpeed
-        UpdatePartMovement()
+-- 速度按钮功能
+speedUpButton.MouseButton1Click:Connect(function()
+    _G.floatSpeed = math.clamp(_G.floatSpeed + 5, 1, 100)  -- 将50改为100
+    speedLabel.Text = "速度: " .. _G.floatSpeed
+    UpdatePartMovement()
 
-        local originalColor = speedUpButton.BackgroundColor3
-        speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-        delay(0.2, function()
-            speedUpButton.BackgroundColor3 = originalColor
-        end)
+    local originalColor = speedUpButton.BackgroundColor3
+    speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    delay(0.2, function()
+        speedUpButton.BackgroundColor3 = originalColor
     end)
+end)
 
-    speedDownButton.MouseButton1Click:Connect(function()
-        _G.floatSpeed = math.clamp(_G.floatSpeed - 5, 1, 50)
-        speedLabel.Text = "速度: " .. _G.floatSpeed
-        UpdatePartMovement()
+speedDownButton.MouseButton1Click:Connect(function()
+    _G.floatSpeed = math.clamp(_G.floatSpeed - 5, 1, 100)  -- 将50改为100
+    speedLabel.Text = "速度: " .. _G.floatSpeed
+    UpdatePartMovement()
 
-        local originalColor = speedDownButton.BackgroundColor3
-        speedDownButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-        delay(0.2, function()
-            speedDownButton.BackgroundColor3 = originalColor
-        end)
+    local originalColor = speedDownButton.BackgroundColor3
+    speedDownButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    delay(0.2, function()
+        speedDownButton.BackgroundColor3 = originalColor
     end)
+end)
 
     -- 停止移动按钮功能
     stopButton.MouseButton1Click:Connect(function()
