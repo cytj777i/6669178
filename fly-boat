@@ -1,0 +1,1210 @@
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+-- 等待游戏加载完成
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+-- 等待本地玩家加载
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- 全局变量
+_G.selectedPart = nil
+_G.selectedHighlight = nil
+_G.floatSpeed = 10
+_G.followDistance = 20
+_G.isFollowing = false
+_G.rotationSpeed = 0.5
+_G.flipAngle = 15 -- 每次翻转的角度（度）
+_G.isFixed = false -- 标记当前选择的物体是否被固定
+_G.fixedParts = {} -- 新增：存储所有被固定的物体
+_G.followConnection = nil -- 新增：跟随连接的引用
+_G.spaceshipMode = false -- 飞船模式状态
+_G.spaceshipSpeed = 20 -- 飞船模式移动速度
+_G.spaceshipVelocities = {} -- 新增：存储飞船模式中物体的速度
+_G.spaceshipGyros = {} -- 新增：存储飞船模式中物体的陀螺仪
+
+-- 设置模拟半径
+local function setupSimulationRadius()
+    local success, err = pcall(function()
+        RunService.Heartbeat:Connect(function()
+            pcall(function()
+                sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                sethiddenproperty(LocalPlayer, "MaxSimulationRadius", math.huge)
+            end)
+        end)
+    end)
+
+    if not success then
+        warn("模拟半径设置失败: " .. tostring(err))
+    end
+end
+
+setupSimulationRadius()
+
+-- 角色死亡自动重连功能
+local function setupAutoReconnect()
+    LocalPlayer.CharacterAdded:Connect(function(character)
+        character:WaitForChild("Humanoid")
+        setupSimulationRadius()
+        print("角色已重生，漂浮控制脚本已自动重新连接")
+        
+        -- 重生后重置跟随状态，但保持固定状态
+        if _G.selectedPart then
+            _G.isFollowing = false
+            if not _G.isFixed then
+                StopPart()
+                removeHighlight()
+                _G.selectedPart = nil
+            end
+        end
+    end)
+
+    LocalPlayer.CharacterRemoving:Connect(function()
+        if _G.selectedPart then
+            -- 如果是固定状态，保持固定，只移除高亮
+            if _G.isFixed then
+                removeHighlight()
+            else
+                -- 如果是跟随状态，完全停止并清除
+                pcall(function()
+                    StopPart()
+                    removeHighlight()
+                end)
+                _G.selectedPart = nil
+                _G.isFollowing = false
+            end
+        end
+    end)
+end
+
+setupAutoReconnect()
+
+-- 创建高亮效果
+local function createHighlight(part)
+    if _G.selectedHighlight then
+        _G.selectedHighlight:Destroy()
+        _G.selectedHighlight = nil
+    end
+
+    local highlight = Instance.new("SelectionBox")
+    highlight.Name = "FloatingHighlight"
+    highlight.Adornee = part
+    highlight.Color3 = Color3.fromRGB(0, 0, 255)
+    highlight.LineThickness = 0.05
+    highlight.Parent = part
+
+    _G.selectedHighlight = highlight
+    return highlight
+end
+
+-- 移除高亮效果
+local function removeHighlight()
+    if _G.selectedHighlight then
+        _G.selectedHighlight:Destroy()
+        _G.selectedHighlight = nil
+    end
+end
+
+-- 停止零件移动和翻转
+local function StopPart()
+    if _G.selectedPart then
+        for _, child in ipairs(_G.selectedPart:GetChildren()) do
+            if child:IsA("BodyVelocity") or child:IsA("BodyAngularVelocity") or 
+               child:IsA("BodyPosition") or child:IsA("BodyGyro") then
+                child:Destroy()
+            end
+        end
+    end
+    -- 断开跟随连接
+    if _G.followConnection then
+        _G.followConnection:Disconnect()
+        _G.followConnection = nil
+    end
+end
+
+-- 跟随视角功能
+local function FollowCamera()
+    if not _G.selectedPart or not _G.isFollowing or _G.isFixed then return end
+    
+    StopPart() -- 清除旧的身体力
+    
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    
+    -- 使用BodyPosition和BodyGyro的组合来实现平滑跟随
+    local bodyPosition = Instance.new("BodyPosition")
+    bodyPosition.MaxForce = Vector3.new(40000, 40000, 40000)
+    bodyPosition.P = 10000  -- 增加P值提高响应速度
+    bodyPosition.D = 1000   -- 增加D值减少振荡
+    bodyPosition.Parent = _G.selectedPart
+    
+    local bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
+    bodyGyro.P = 1000
+    bodyGyro.D = 500
+    bodyGyro.Parent = _G.selectedPart
+    
+    -- 每帧更新位置和旋转
+    _G.followConnection = RunService.Heartbeat:Connect(function()
+        if not _G.selectedPart or not _G.isFollowing or _G.isFixed then
+            if _G.followConnection then
+                _G.followConnection:Disconnect()
+                _G.followConnection = nil
+            end
+            return
+        end
+        
+        local cameraCFrame = camera.CFrame
+        local lookVector = cameraCFrame.LookVector
+        
+        -- 正确计算目标位置，考虑Y轴高度
+        local targetPosition = cameraCFrame.Position + (lookVector * _G.followDistance)
+        
+        -- 设置目标位置
+        bodyPosition.Position = targetPosition
+        
+        -- 保持物体当前的方向，不强制朝向摄像机
+        bodyGyro.CFrame = _G.selectedPart.CFrame
+    end)
+end
+
+-- 固定零件在当前位置
+local function FixPart()
+    if _G.selectedPart and not _G.isFixed then
+        StopPart() -- 停止所有运动
+        
+        -- 设置零件为固定状态，使其完全静止
+        _G.selectedPart.Anchored = true
+        
+        -- 标记为已固定并添加到固定列表
+        _G.isFixed = true
+        _G.fixedParts[_G.selectedPart] = true
+        
+        return true
+    end
+    return false
+end
+
+-- 解除固定
+local function UnfixPart()
+    if _G.selectedPart and _G.isFixed then
+        -- 取消固定状态
+        _G.selectedPart.Anchored = false
+        _G.isFixed = false
+        _G.fixedParts[_G.selectedPart] = nil
+        
+        -- 重新开始跟随
+        _G.isFollowing = true
+        FollowCamera()
+        
+        -- 重新添加高亮
+        createHighlight(_G.selectedPart)
+        
+        return true
+    end
+    return false
+end
+
+-- 检查零件是否可控制
+local function IsPartControllable(part)
+    -- 允许选择任何零件，包括已固定的和未固定的
+    return part:IsA("Part") and not part.Parent:FindFirstChild("Humanoid") and 
+           not part.Parent:FindFirstChild("Head") and part.Parent ~= LocalPlayer.Character
+end
+
+-- 选择零件函数 - 修复：不会影响已固定的其他物体
+local function SelectPart(part)
+    if IsPartControllable(part) then
+        -- 如果点击的是已选择的零件且已固定，则解除固定
+        if _G.selectedPart == part and _G.isFixed then
+            UnfixPart()
+            return true
+        end
+        
+        -- 取消之前的选择（只影响当前选择的物体，不影响其他已固定的物体）
+        if _G.selectedPart and _G.selectedPart ~= part then
+            -- 如果之前选择的物体没有被固定，则停止它
+            if not _G.fixedParts[_G.selectedPart] then
+                StopPart()
+                removeHighlight()
+                _G.isFollowing = false
+                _G.isFixed = false
+            else
+                -- 如果之前选择的物体是固定的，只移除高亮，保持固定状态
+                removeHighlight()
+            end
+        end
+
+        -- 检查新选择的零件是否已经在固定列表中
+        local wasFixed = _G.fixedParts[part]
+        
+        -- 选择新零件
+        _G.selectedPart = part
+        _G.isFixed = wasFixed or false
+        
+        -- 添加高亮
+        createHighlight(part)
+        
+        -- 如果零件没有被固定，则开始跟随
+        if not _G.isFixed then
+            _G.isFollowing = true
+            FollowCamera()
+        else
+            _G.isFollowing = false
+        end
+        
+        return true
+    end
+    return false
+end
+
+-- 射线检测函数
+local function getTargetPart()
+    local camera = Workspace.CurrentCamera
+    local mousePos = UserInputService:GetMouseLocation()
+    local unitRay = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+    local ray = Ray.new(unitRay.Origin, unitRay.Direction * 1000)
+
+    local part, position = Workspace:FindPartOnRay(ray, LocalPlayer.Character)
+    return part
+end
+
+-- 应用翻转 - 固定角度旋转，并更新BodyGyro保持新方向
+local function ApplyFlip(axis, angleDegrees)
+    if _G.selectedPart and not _G.isFixed then
+        -- 计算旋转角度（弧度）
+        local angleRadians = math.rad(angleDegrees)
+        
+        -- 根据轴创建旋转CFrame
+        local rotationCFrame
+        if axis == "X" then
+            rotationCFrame = CFrame.Angles(angleRadians, 0, 0)
+        elseif axis == "Y" then
+            rotationCFrame = CFrame.Angles(0, angleRadians, 0)
+        elseif axis == "Z" then
+            rotationCFrame = CFrame.Angles(0, 0, angleRadians)
+        end
+        
+        -- 应用旋转
+        _G.selectedPart.CFrame = _G.selectedPart.CFrame * rotationCFrame
+        
+        -- 重要：更新BodyGyro以保持新的旋转方向
+        for _, child in ipairs(_G.selectedPart:GetChildren()) do
+            if child:IsA("BodyGyro") then
+                child.CFrame = _G.selectedPart.CFrame
+                break
+            end
+        end
+    end
+end
+
+-- 飞船模式翻转函数 - 应用于所有固定物体
+local function ApplySpaceshipFlip(axis, angleDegrees)
+    if not _G.spaceshipMode then return end
+    
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    
+    local angleRadians = math.rad(angleDegrees)
+    local rotationCFrame
+    
+    if axis == "X" then
+        rotationCFrame = CFrame.Angles(angleRadians, 0, 0)
+    elseif axis == "Y" then
+        rotationCFrame = CFrame.Angles(0, angleRadians, 0)
+    elseif axis == "Z" then
+        rotationCFrame = CFrame.Angles(0, 0, angleRadians)
+    end
+    
+    -- 对每个固定物体应用旋转
+    for part, _ in pairs(_G.fixedParts) do
+        if part and part.Parent then
+            part.CFrame = part.CFrame * rotationCFrame
+            
+            -- 更新陀螺仪以保持新方向
+            if _G.spaceshipGyros[part] then
+                _G.spaceshipGyros[part].CFrame = part.CFrame
+            end
+        end
+    end
+end
+
+-- 飞船模式移动函数 - 修复：使用BodyVelocity让物体真正飞起来，并防止旋转
+local function MoveSpaceship(direction)
+    if not _G.spaceshipMode then return end
+    
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    
+    local moveVector = Vector3.new(0, 0, 0)
+    local cameraCFrame = camera.CFrame
+    
+    if direction == "forward" then
+        moveVector = cameraCFrame.LookVector * _G.spaceshipSpeed
+    elseif direction == "backward" then
+        moveVector = -cameraCFrame.LookVector * _G.spaceshipSpeed
+    elseif direction == "left" then
+        moveVector = -cameraCFrame.RightVector * _G.spaceshipSpeed
+    elseif direction == "right" then
+        moveVector = cameraCFrame.RightVector * _G.spaceshipSpeed
+    elseif direction == "up" then
+        moveVector = Vector3.new(0, _G.spaceshipSpeed, 0)
+    elseif direction == "down" then
+        moveVector = Vector3.new(0, -_G.spaceshipSpeed, 0)
+    end
+    
+    -- 对每个固定物体应用移动
+    for part, _ in pairs(_G.fixedParts) do
+        if part and part.Parent then
+            -- 取消固定状态，让物体可以移动
+            part.Anchored = false
+            
+            -- 检查是否已经有BodyVelocity，如果没有则创建
+            if not _G.spaceshipVelocities[part] then
+                local bodyVelocity = Instance.new("BodyVelocity")
+                bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyVelocity.Parent = part
+                _G.spaceshipVelocities[part] = bodyVelocity
+            end
+            
+            -- 检查是否已经有BodyGyro，如果没有则创建（防止旋转）
+            if not _G.spaceshipGyros[part] then
+                local bodyGyro = Instance.new("BodyGyro")
+                bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                bodyGyro.P = 1000
+                bodyGyro.D = 500
+                bodyGyro.CFrame = part.CFrame  -- 保持当前方向
+                bodyGyro.Parent = part
+                _G.spaceshipGyros[part] = bodyGyro
+            end
+            
+            -- 设置速度
+            _G.spaceshipVelocities[part].Velocity = moveVector
+            
+            -- 保持陀螺仪方向
+            if _G.spaceshipGyros[part] then
+                _G.spaceshipGyros[part].CFrame = part.CFrame
+            end
+        end
+    end
+end
+
+-- 停止飞船模式移动
+local function StopSpaceshipMovement()
+    for part, bodyVelocity in pairs(_G.spaceshipVelocities) do
+        if bodyVelocity and bodyVelocity.Parent then
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
+-- 退出飞船模式
+local function ExitSpaceshipMode()
+    _G.spaceshipMode = false
+    
+    -- 停止所有移动
+    StopSpaceshipMovement()
+    
+    -- 清理BodyVelocity、BodyGyro并重新固定物体
+    for part, bodyVelocity in pairs(_G.spaceshipVelocities) do
+        if bodyVelocity and bodyVelocity.Parent then
+            bodyVelocity:Destroy()
+        end
+    end
+    
+    for part, bodyGyro in pairs(_G.spaceshipGyros) do
+        if bodyGyro and bodyGyro.Parent then
+            bodyGyro:Destroy()
+        end
+    end
+    
+    -- 重新固定物体
+    for part, _ in pairs(_G.fixedParts) do
+        if part and part.Parent then
+            part.Anchored = true
+        end
+    end
+    
+    _G.spaceshipVelocities = {}
+    _G.spaceshipGyros = {}
+end
+
+-- 使GUI元素可拖动的函数
+local function MakeDraggable(gui)
+    gui.Active = true
+    gui.Draggable = true
+end
+
+-- 创建手机友好的GUI
+local function CreateMobileGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "SingleObjectFloatingControl"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    -- 选择模式开关按钮 - 右上角
+    local selectModeButton = Instance.new("TextButton")
+    selectModeButton.Name = "SelectModeToggle"
+    selectModeButton.Size = UDim2.new(0, 150, 0, 40)
+    selectModeButton.Position = UDim2.new(1, -160, 0, 10)
+    selectModeButton.Text = "选择模式: 关闭"
+    selectModeButton.TextSize = 14
+    selectModeButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    selectModeButton.TextColor3 = Color3.new(1, 1, 1)
+    selectModeButton.Parent = screenGui
+
+    MakeDraggable(selectModeButton)
+
+    -- 距离控制UI - 只在选择物体且未固定时显示
+    local distancePanel = Instance.new("Frame")
+    distancePanel.Name = "DistancePanel"
+    distancePanel.Size = UDim2.new(0, 200, 0, 60)
+    distancePanel.Position = UDim2.new(0.5, -100, 0, 10)
+    distancePanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    distancePanel.BackgroundTransparency = 0.3
+    distancePanel.BorderSizePixel = 0
+    distancePanel.Visible = false
+    distancePanel.Parent = screenGui
+
+    MakeDraggable(distancePanel)
+
+    local distanceLabel = Instance.new("TextLabel")
+    distanceLabel.Name = "DistanceLabel"
+    distanceLabel.Size = UDim2.new(1, 0, 0, 30)
+    distanceLabel.Position = UDim2.new(0, 0, 0, 0)
+    distanceLabel.Text = "距离: " .. _G.followDistance
+    distanceLabel.TextColor3 = Color3.new(1, 1, 1)
+    distanceLabel.BackgroundTransparency = 1
+    distanceLabel.TextSize = 16
+    distanceLabel.Parent = distancePanel
+
+    local distanceDownButton = Instance.new("TextButton")
+    distanceDownButton.Name = "DistanceDown"
+    distanceDownButton.Size = UDim2.new(0, 60, 0, 30)
+    distanceDownButton.Position = UDim2.new(0, 10, 0, 30)
+    distanceDownButton.Text = "-"
+    distanceDownButton.TextSize = 20
+    distanceDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    distanceDownButton.TextColor3 = Color3.new(1, 1, 1)
+    distanceDownButton.Parent = distancePanel
+
+    local distanceUpButton = Instance.new("TextButton")
+    distanceUpButton.Name = "DistanceUp"
+    distanceUpButton.Size = UDim2.new(0, 60, 0, 30)
+    distanceUpButton.Position = UDim2.new(1, -70, 0, 30)
+    distanceUpButton.Text = "+"
+    distanceUpButton.TextSize = 20
+    distanceUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    distanceUpButton.TextColor3 = Color3.new(1, 1, 1)
+    distanceUpButton.Parent = distancePanel
+
+    -- 控制面板
+    local controlPanel = Instance.new("Frame")
+    controlPanel.Name = "ControlPanel"
+    controlPanel.Size = UDim2.new(0, 320, 0, 400)
+    controlPanel.Position = UDim2.new(0.5, -160, 0.5, -200)
+    controlPanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    controlPanel.BackgroundTransparency = 0.3
+    controlPanel.BorderSizePixel = 0
+    controlPanel.Visible = false
+    controlPanel.Parent = screenGui
+
+    MakeDraggable(controlPanel)
+
+    -- UI缩放控制
+    local uiScale = Instance.new("UIScale")
+    uiScale.Scale = 1.0
+    uiScale.Parent = controlPanel
+
+    -- 动作按钮
+    local fixButton = Instance.new("TextButton")
+    fixButton.Name = "FixButton"
+    fixButton.Size = UDim2.new(0, 140, 0, 40)
+    fixButton.Position = UDim2.new(0.05, 0, 0, 20)
+    fixButton.Text = "固定物体"
+    fixButton.TextSize = 16
+    fixButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    fixButton.TextColor3 = Color3.new(1, 1, 1)
+    fixButton.Parent = controlPanel
+
+    local unfixButton = Instance.new("TextButton")
+    unfixButton.Name = "UnfixButton"
+    unfixButton.Size = UDim2.new(0, 140, 0, 40)
+    unfixButton.Position = UDim2.new(0.55, 0, 0, 20)
+    unfixButton.Text = "解除固定"
+    unfixButton.TextSize = 16
+    unfixButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    unfixButton.TextColor3 = Color3.new(1, 1, 1)
+    unfixButton.Parent = controlPanel
+
+    -- 翻转控制标题
+    local flipLabel = Instance.new("TextLabel")
+    flipLabel.Name = "FlipLabel"
+    flipLabel.Size = UDim2.new(1, 0, 0, 30)
+    flipLabel.Position = UDim2.new(0, 0, 0, 80)
+    flipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+    flipLabel.TextColor3 = Color3.new(1, 1, 1)
+    flipLabel.BackgroundTransparency = 1
+    flipLabel.TextSize = 18
+    flipLabel.Parent = controlPanel
+
+    -- 翻转角度控制
+    local flipAngleDownButton = Instance.new("TextButton")
+    flipAngleDownButton.Name = "FlipAngleDown"
+    flipAngleDownButton.Size = UDim2.new(0, 30, 0, 30)
+    flipAngleDownButton.Position = UDim2.new(0.3, -15, 0, 120)
+    flipAngleDownButton.Text = "-"
+    flipAngleDownButton.TextSize = 16
+    flipAngleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    flipAngleDownButton.TextColor3 = Color3.new(1, 1, 1)
+    flipAngleDownButton.Parent = controlPanel
+
+    local flipAngleUpButton = Instance.new("TextButton")
+    flipAngleUpButton.Name = "FlipAngleUp"
+    flipAngleUpButton.Size = UDim2.new(0, 30, 0, 30)
+    flipAngleUpButton.Position = UDim2.new(0.7, -15, 0, 120)
+    flipAngleUpButton.Text = "+"
+    flipAngleUpButton.TextSize = 16
+    flipAngleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    flipAngleUpButton.TextColor3 = Color3.new(1, 1, 1)
+    flipAngleUpButton.Parent = controlPanel
+
+    -- 翻转按钮
+    local flipUpButton = Instance.new("TextButton")
+    flipUpButton.Name = "FlipUp"
+    flipUpButton.Size = UDim2.new(0, 80, 0, 40)
+    flipUpButton.Position = UDim2.new(0.5, -40, 0, 160)
+    flipUpButton.Text = "上翻转"
+    flipUpButton.TextSize = 16
+    flipUpButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    flipUpButton.TextColor3 = Color3.new(1, 1, 1)
+    flipUpButton.Parent = controlPanel
+
+    local flipDownButton = Instance.new("TextButton")
+    flipDownButton.Name = "FlipDown"
+    flipDownButton.Size = UDim2.new(0, 80, 0, 40)
+    flipDownButton.Position = UDim2.new(0.5, -40, 0, 210)
+    flipDownButton.Text = "下翻转"
+    flipDownButton.TextSize = 16
+    flipDownButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    flipDownButton.TextColor3 = Color3.new(1, 1, 1)
+    flipDownButton.Parent = controlPanel
+
+    local flipLeftButton = Instance.new("TextButton")
+    flipLeftButton.Name = "FlipLeft"
+    flipLeftButton.Size = UDim2.new(0, 80, 0, 40)
+    flipLeftButton.Position = UDim2.new(0.1, 0, 0, 185)
+    flipLeftButton.Text = "左翻转"
+    flipLeftButton.TextSize = 16
+    flipLeftButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    flipLeftButton.TextColor3 = Color3.new(1, 1, 1)
+    flipLeftButton.Parent = controlPanel
+
+    local flipRightButton = Instance.new("TextButton")
+    flipRightButton.Name = "FlipRight"
+    flipRightButton.Size = UDim2.new(0, 80, 0, 40)
+    flipRightButton.Position = UDim2.new(0.9, -80, 0, 185)
+    flipRightButton.Text = "右翻转"
+    flipRightButton.TextSize = 16
+    flipRightButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    flipRightButton.TextColor3 = Color3.new(1, 1, 1)
+    flipRightButton.Parent = controlPanel
+
+    -- UI缩放控制
+    local scaleLabel = Instance.new("TextLabel")
+    scaleLabel.Name = "ScaleLabel"
+    scaleLabel.Size = UDim2.new(1, 0, 0, 30)
+    scaleLabel.Position = UDim2.new(0, 0, 0, 270)
+    scaleLabel.Text = "UI大小: 1.0"
+    scaleLabel.TextColor3 = Color3.new(1, 1, 1)
+    scaleLabel.BackgroundTransparency = 1
+    scaleLabel.TextSize = 16
+    scaleLabel.Parent = controlPanel
+
+    local scaleDownButton = Instance.new("TextButton")
+    scaleDownButton.Name = "ScaleDown"
+    scaleDownButton.Size = UDim2.new(0, 60, 0, 30)
+    scaleDownButton.Position = UDim2.new(0.3, -30, 0, 300)
+    scaleDownButton.Text = "-"
+    scaleDownButton.TextSize = 20
+    scaleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    scaleDownButton.TextColor3 = Color3.new(1, 1, 1)
+    scaleDownButton.Parent = controlPanel
+
+    local scaleUpButton = Instance.new("TextButton")
+    scaleUpButton.Name = "ScaleUp"
+    scaleUpButton.Size = UDim2.new(0, 60, 0, 30)
+    scaleUpButton.Position = UDim2.new(0.7, -30, 0, 300)
+    scaleUpButton.Text = "+"
+    scaleUpButton.TextSize = 20
+    scaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    scaleUpButton.TextColor3 = Color3.new(1, 1, 1)
+    scaleUpButton.Parent = controlPanel
+
+    -- 飞船模式按钮
+    local spaceshipButton = Instance.new("TextButton")
+    spaceshipButton.Name = "SpaceshipMode"
+    spaceshipButton.Size = UDim2.new(0, 140, 0, 40)
+    spaceshipButton.Position = UDim2.new(0.05, 0, 0, 340)
+    spaceshipButton.Text = "开启飞船模式"
+    spaceshipButton.TextSize = 14
+    spaceshipButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+    spaceshipButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipButton.Parent = controlPanel
+
+    -- 关闭面板按钮
+    local closeButton = Instance.new("TextButton")
+    closeButton.Name = "ClosePanel"
+    closeButton.Size = UDim2.new(0, 140, 0, 40)
+    closeButton.Position = UDim2.new(0.55, 0, 0, 340)
+    closeButton.Text = "关闭面板"
+    closeButton.TextSize = 16
+    closeButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+    closeButton.TextColor3 = Color3.new(1, 1, 1)
+    closeButton.Parent = controlPanel
+
+    -- 打开面板按钮 - 右上角
+    local openPanelButton = Instance.new("TextButton")
+    openPanelButton.Name = "OpenPanel"
+    openPanelButton.Size = UDim2.new(0, 120, 0, 40)
+    openPanelButton.Position = UDim2.new(1, -160, 0, 60)
+    openPanelButton.Text = "打开控制面板"
+    openPanelButton.TextSize = 14
+    openPanelButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    openPanelButton.TextColor3 = Color3.new(1, 1, 1)
+    openPanelButton.Visible = true
+    openPanelButton.Parent = screenGui
+
+    MakeDraggable(openPanelButton)
+
+    -- 飞船模式UI - 优化布局，增加面板高度，避免按钮重叠
+    local spaceshipPanel = Instance.new("Frame")
+    spaceshipPanel.Name = "SpaceshipPanel"
+    spaceshipPanel.Size = UDim2.new(0, 350, 0, 650) -- 进一步增加高度
+    spaceshipPanel.Position = UDim2.new(0.5, -175, 0.5, -325)
+    spaceshipPanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    spaceshipPanel.BackgroundTransparency = 0.3
+    spaceshipPanel.BorderSizePixel = 0
+    spaceshipPanel.Visible = false
+    spaceshipPanel.Parent = screenGui
+
+    MakeDraggable(spaceshipPanel)
+
+    -- 飞船模式UI缩放控制
+    local spaceshipUIScale = Instance.new("UIScale")
+    spaceshipUIScale.Scale = 1.0
+    spaceshipUIScale.Parent = spaceshipPanel
+
+    -- 飞船模式标题
+    local spaceshipTitle = Instance.new("TextLabel")
+    spaceshipTitle.Name = "SpaceshipTitle"
+    spaceshipTitle.Size = UDim2.new(1, 0, 0, 40)
+    spaceshipTitle.Position = UDim2.new(0, 0, 0, 10)
+    spaceshipTitle.Text = "飞船模式控制"
+    spaceshipTitle.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipTitle.BackgroundTransparency = 1
+    spaceshipTitle.TextSize = 20
+    spaceshipTitle.TextScaled = false
+    spaceshipTitle.Parent = spaceshipPanel
+
+    -- 速度控制
+    local speedLabel = Instance.new("TextLabel")
+    speedLabel.Name = "SpeedLabel"
+    speedLabel.Size = UDim2.new(1, 0, 0, 30)
+    speedLabel.Position = UDim2.new(0, 0, 0, 60)
+    speedLabel.Text = "速度: " .. _G.spaceshipSpeed
+    speedLabel.TextColor3 = Color3.new(1, 1, 1)
+    speedLabel.BackgroundTransparency = 1
+    speedLabel.TextSize = 18
+    speedLabel.Parent = spaceshipPanel
+
+    local speedDownButton = Instance.new("TextButton")
+    speedDownButton.Name = "SpeedDown"
+    speedDownButton.Size = UDim2.new(0, 40, 0, 30)
+    speedDownButton.Position = UDim2.new(0.3, -20, 0, 100)
+    speedDownButton.Text = "-"
+    speedDownButton.TextSize = 16
+    speedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    speedDownButton.TextColor3 = Color3.new(1, 1, 1)
+    speedDownButton.Parent = spaceshipPanel
+
+    local speedUpButton = Instance.new("TextButton")
+    speedUpButton.Name = "SpeedUp"
+    speedUpButton.Size = UDim2.new(0, 40, 0, 30)
+    speedUpButton.Position = UDim2.new(0.7, -20, 0, 100)
+    speedUpButton.Text = "+"
+    speedUpButton.TextSize = 16
+    speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    speedUpButton.TextColor3 = Color3.new(1, 1, 1)
+    speedUpButton.Parent = spaceshipPanel
+
+    -- 飞船模式翻转控制标题
+    local spaceshipFlipLabel = Instance.new("TextLabel")
+    spaceshipFlipLabel.Name = "SpaceshipFlipLabel"
+    spaceshipFlipLabel.Size = UDim2.new(1, 0, 0, 30)
+    spaceshipFlipLabel.Position = UDim2.new(0, 0, 0, 140)
+    spaceshipFlipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+    spaceshipFlipLabel.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipFlipLabel.BackgroundTransparency = 1
+    spaceshipFlipLabel.TextSize = 18
+    spaceshipFlipLabel.Parent = spaceshipPanel
+
+    -- 飞船模式翻转角度控制
+    local spaceshipFlipAngleDownButton = Instance.new("TextButton")
+    spaceshipFlipAngleDownButton.Name = "SpaceshipFlipAngleDown"
+    spaceshipFlipAngleDownButton.Size = UDim2.new(0, 40, 0, 30)
+    spaceshipFlipAngleDownButton.Position = UDim2.new(0.3, -20, 0, 180)
+    spaceshipFlipAngleDownButton.Text = "-"
+    spaceshipFlipAngleDownButton.TextSize = 16
+    spaceshipFlipAngleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    spaceshipFlipAngleDownButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipFlipAngleDownButton.Parent = spaceshipPanel
+
+    local spaceshipFlipAngleUpButton = Instance.new("TextButton")
+    spaceshipFlipAngleUpButton.Name = "SpaceshipFlipAngleUp"
+    spaceshipFlipAngleUpButton.Size = UDim2.new(0, 40, 0, 30)
+    spaceshipFlipAngleUpButton.Position = UDim2.new(0.7, -20, 0, 180)
+    spaceshipFlipAngleUpButton.Text = "+"
+    spaceshipFlipAngleUpButton.TextSize = 16
+    spaceshipFlipAngleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    spaceshipFlipAngleUpButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipFlipAngleUpButton.Parent = spaceshipPanel
+
+    -- 飞船模式翻转按钮 - 十字形布局
+    local spaceshipFlipUpButton = Instance.new("TextButton")
+    spaceshipFlipUpButton.Name = "SpaceshipFlipUp"
+    spaceshipFlipUpButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipFlipUpButton.Position = UDim2.new(0.5, -40, 0, 220)
+    spaceshipFlipUpButton.Text = "上翻转"
+    spaceshipFlipUpButton.TextSize = 16
+    spaceshipFlipUpButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    spaceshipFlipUpButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipFlipUpButton.Parent = spaceshipPanel
+
+    local spaceshipFlipDownButton = Instance.new("TextButton")
+    spaceshipFlipDownButton.Name = "SpaceshipFlipDown"
+    spaceshipFlipDownButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipFlipDownButton.Position = UDim2.new(0.5, -40, 0, 310)
+    spaceshipFlipDownButton.Text = "下翻转"
+    spaceshipFlipDownButton.TextSize = 16
+    spaceshipFlipDownButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    spaceshipFlipDownButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipFlipDownButton.Parent = spaceshipPanel
+
+    local spaceshipFlipLeftButton = Instance.new("TextButton")
+    spaceshipFlipLeftButton.Name = "SpaceshipFlipLeft"
+    spaceshipFlipLeftButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipFlipLeftButton.Position = UDim2.new(0.2, -40, 0, 265)
+    spaceshipFlipLeftButton.Text = "左翻转"
+    spaceshipFlipLeftButton.TextSize = 16
+    spaceshipFlipLeftButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    spaceshipFlipLeftButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipFlipLeftButton.Parent = spaceshipPanel
+
+    local spaceshipFlipRightButton = Instance.new("TextButton")
+    spaceshipFlipRightButton.Name = "SpaceshipFlipRight"
+    spaceshipFlipRightButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipFlipRightButton.Position = UDim2.new(0.8, -40, 0, 265)
+    spaceshipFlipRightButton.Text = "右翻转"
+    spaceshipFlipRightButton.TextSize = 16
+    spaceshipFlipRightButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    spaceshipFlipRightButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipFlipRightButton.Parent = spaceshipPanel
+
+    -- 飞船模式移动控制 - 重新设计布局，避免重叠
+    local spaceshipMoveUpButton = Instance.new("TextButton")
+    spaceshipMoveUpButton.Name = "SpaceshipMoveUp"
+    spaceshipMoveUpButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipMoveUpButton.Position = UDim2.new(0.5, -40, 0, 370)
+    spaceshipMoveUpButton.Text = "上升"
+    spaceshipMoveUpButton.TextSize = 16
+    spaceshipMoveUpButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
+    spaceshipMoveUpButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipMoveUpButton.Parent = spaceshipPanel
+
+    local spaceshipMoveForwardButton = Instance.new("TextButton")
+    spaceshipMoveForwardButton.Name = "SpaceshipMoveForward"
+    spaceshipMoveForwardButton.Size = UDim2.new(0, 100, 0, 40)
+    spaceshipMoveForwardButton.Position = UDim2.new(0.5, -50, 0, 420)
+    spaceshipMoveForwardButton.Text = "前进"
+    spaceshipMoveForwardButton.TextSize = 16
+    spaceshipMoveForwardButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    spaceshipMoveForwardButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipMoveForwardButton.Parent = spaceshipPanel
+
+    local spaceshipMoveDownButton = Instance.new("TextButton")
+    spaceshipMoveDownButton.Name = "SpaceshipMoveDown"
+    spaceshipMoveDownButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipMoveDownButton.Position = UDim2.new(0.5, -40, 0, 470)
+    spaceshipMoveDownButton.Text = "下降"
+    spaceshipMoveDownButton.TextSize = 16
+    spaceshipMoveDownButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
+    spaceshipMoveDownButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipMoveDownButton.Parent = spaceshipPanel
+
+    local spaceshipMoveLeftButton = Instance.new("TextButton")
+    spaceshipMoveLeftButton.Name = "SpaceshipMoveLeft"
+    spaceshipMoveLeftButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipMoveLeftButton.Position = UDim2.new(0.2, -40, 0, 420)
+    spaceshipMoveLeftButton.Text = "左移"
+    spaceshipMoveLeftButton.TextSize = 16
+    spaceshipMoveLeftButton.BackgroundColor3 = Color3.fromRGB(0, 0, 150)
+    spaceshipMoveLeftButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipMoveLeftButton.Parent = spaceshipPanel
+
+    local spaceshipMoveRightButton = Instance.new("TextButton")
+    spaceshipMoveRightButton.Name = "SpaceshipMoveRight"
+    spaceshipMoveRightButton.Size = UDim2.new(0, 80, 0, 40)
+    spaceshipMoveRightButton.Position = UDim2.new(0.8, -40, 0, 420)
+    spaceshipMoveRightButton.Text = "右移"
+    spaceshipMoveRightButton.TextSize = 16
+    spaceshipMoveRightButton.BackgroundColor3 = Color3.fromRGB(0, 0, 150)
+    spaceshipMoveRightButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipMoveRightButton.Parent = spaceshipPanel
+
+    local spaceshipMoveBackwardButton = Instance.new("TextButton")
+    spaceshipMoveBackwardButton.Name = "SpaceshipMoveBackward"
+    spaceshipMoveBackwardButton.Size = UDim2.new(0, 100, 0, 40)
+    spaceshipMoveBackwardButton.Position = UDim2.new(0.5, -50, 0, 520)
+    spaceshipMoveBackwardButton.Text = "后退"
+    spaceshipMoveBackwardButton.TextSize = 16
+    spaceshipMoveBackwardButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    spaceshipMoveBackwardButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipMoveBackwardButton.Parent = spaceshipPanel
+
+    -- 飞船模式UI缩放控制
+    local spaceshipScaleLabel = Instance.new("TextLabel")
+    spaceshipScaleLabel.Name = "SpaceshipScaleLabel"
+    spaceshipScaleLabel.Size = UDim2.new(1, 0, 0, 30)
+    spaceshipScaleLabel.Position = UDim2.new(0, 0, 0, 570)
+    spaceshipScaleLabel.Text = "UI大小: 1.0"
+    spaceshipScaleLabel.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipScaleLabel.BackgroundTransparency = 1
+    spaceshipScaleLabel.TextSize = 16
+    spaceshipScaleLabel.Parent = spaceshipPanel
+
+    local spaceshipScaleDownButton = Instance.new("TextButton")
+    spaceshipScaleDownButton.Name = "SpaceshipScaleDown"
+    spaceshipScaleDownButton.Size = UDim2.new(0, 60, 0, 30)
+    spaceshipScaleDownButton.Position = UDim2.new(0.3, -30, 0, 600)
+    spaceshipScaleDownButton.Text = "-"
+    spaceshipScaleDownButton.TextSize = 20
+    spaceshipScaleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    spaceshipScaleDownButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipScaleDownButton.Parent = spaceshipPanel
+
+    local spaceshipScaleUpButton = Instance.new("TextButton")
+    spaceshipScaleUpButton.Name = "SpaceshipScaleUp"
+    spaceshipScaleUpButton.Size = UDim2.new(0, 60, 0, 30)
+    spaceshipScaleUpButton.Position = UDim2.new(0.7, -30, 0, 600)
+    spaceshipScaleUpButton.Text = "+"
+    spaceshipScaleUpButton.TextSize = 20
+    spaceshipScaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    spaceshipScaleUpButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipScaleUpButton.Parent = spaceshipPanel
+
+    -- 关闭飞船模式按钮 - 调整到左边
+    local closeSpaceshipButton = Instance.new("TextButton")
+    closeSpaceshipButton.Name = "CloseSpaceship"
+    closeSpaceshipButton.Size = UDim2.new(0, 140, 0, 40)
+    closeSpaceshipButton.Position = UDim2.new(0.05, 0, 0, 640) -- 调整到左边
+    closeSpaceshipButton.Text = "关闭飞船模式"
+    closeSpaceshipButton.TextSize = 16
+    closeSpaceshipButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+    closeSpaceshipButton.TextColor3 = Color3.new(1, 1, 1)
+    closeSpaceshipButton.Parent = spaceshipPanel
+
+    -- 新增：停止移动按钮 - 放在关闭飞船模式按钮右边
+    local stopMovementButton = Instance.new("TextButton")
+    stopMovementButton.Name = "StopMovement"
+    stopMovementButton.Size = UDim2.new(0, 140, 0, 40)
+    stopMovementButton.Position = UDim2.new(0.55, 0, 0, 640) -- 放在右边
+    stopMovementButton.Text = "停止移动"
+    stopMovementButton.TextSize = 16
+    stopMovementButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    stopMovementButton.TextColor3 = Color3.new(1, 1, 1)
+    stopMovementButton.Parent = spaceshipPanel
+
+    -- 选择模式状态
+    local selectMode = false
+
+    -- 鼠标点击事件处理
+    local function onMouseClick()
+        if not selectMode then return end
+
+        local targetPart = getTargetPart()
+        if targetPart then
+            SelectPart(targetPart)
+        end
+    end
+
+    -- 连接鼠标点击事件
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            onMouseClick()
+        end
+    end)
+
+    -- 距离控制功能
+    distanceUpButton.MouseButton1Click:Connect(function()
+        _G.followDistance = math.min(_G.followDistance + 1, 50)
+        distanceLabel.Text = "距离: " .. _G.followDistance
+    end)
+
+    distanceDownButton.MouseButton1Click:Connect(function()
+        _G.followDistance = math.max(_G.followDistance - 1, 1)
+        distanceLabel.Text = "距离: " .. _G.followDistance
+    end)
+
+    -- 固定按钮功能
+    fixButton.MouseButton1Click:Connect(function()
+        if FixPart() then
+            distancePanel.Visible = false
+        end
+    end)
+
+    -- 解除固定按钮功能
+    unfixButton.MouseButton1Click:Connect(function()
+        if UnfixPart() then
+            distancePanel.Visible = true
+        end
+    end)
+
+    -- 翻转角度控制
+    flipAngleUpButton.MouseButton1Click:Connect(function()
+        _G.flipAngle = math.min(_G.flipAngle + 1, 90)
+        flipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+        spaceshipFlipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+    end)
+
+    flipAngleDownButton.MouseButton1Click:Connect(function()
+        _G.flipAngle = math.max(_G.flipAngle - 1, 1)
+        flipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+        spaceshipFlipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+    end)
+
+    -- 翻转控制功能
+    flipUpButton.MouseButton1Click:Connect(function()
+        ApplyFlip("X", _G.flipAngle)
+    end)
+
+    flipDownButton.MouseButton1Click:Connect(function()
+        ApplyFlip("X", -_G.flipAngle)
+    end)
+
+    flipLeftButton.MouseButton1Click:Connect(function()
+        ApplyFlip("Y", _G.flipAngle)
+    end)
+
+    flipRightButton.MouseButton1Click:Connect(function()
+        ApplyFlip("Y", -_G.flipAngle)
+    end)
+
+    -- UI缩放功能
+    scaleUpButton.MouseButton1Click:Connect(function()
+        uiScale.Scale = math.min(uiScale.Scale + 0.1, 1.5)
+        scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
+    end)
+
+    scaleDownButton.MouseButton1Click:Connect(function()
+        uiScale.Scale = math.max(uiScale.Scale - 0.1, 0.5)
+        scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
+    end)
+
+    -- 飞船模式速度控制
+    speedUpButton.MouseButton1Click:Connect(function()
+        _G.spaceshipSpeed = math.min(_G.spaceshipSpeed + 5, 100)
+        speedLabel.Text = "速度: " .. _G.spaceshipSpeed
+    end)
+
+    speedDownButton.MouseButton1Click:Connect(function()
+        _G.spaceshipSpeed = math.max(_G.spaceshipSpeed - 5, 1)
+        speedLabel.Text = "速度: " .. _G.spaceshipSpeed
+    end)
+
+    -- 飞船模式翻转角度控制
+    spaceshipFlipAngleUpButton.MouseButton1Click:Connect(function()
+        _G.flipAngle = math.min(_G.flipAngle + 1, 90)
+        flipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+        spaceshipFlipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+    end)
+
+    spaceshipFlipAngleDownButton.MouseButton1Click:Connect(function()
+        _G.flipAngle = math.max(_G.flipAngle - 1, 1)
+        flipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+        spaceshipFlipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+    end)
+
+    -- 飞船模式翻转控制功能
+    spaceshipFlipUpButton.MouseButton1Click:Connect(function()
+        ApplySpaceshipFlip("X", _G.flipAngle)
+    end)
+
+    spaceshipFlipDownButton.MouseButton1Click:Connect(function()
+        ApplySpaceshipFlip("X", -_G.flipAngle)
+    end)
+
+    spaceshipFlipLeftButton.MouseButton1Click:Connect(function()
+        ApplySpaceshipFlip("Y", _G.flipAngle)
+    end)
+
+    spaceshipFlipRightButton.MouseButton1Click:Connect(function()
+        ApplySpaceshipFlip("Y", -_G.flipAngle)
+    end)
+
+    -- 飞船模式移动控制
+    spaceshipMoveForwardButton.MouseButton1Click:Connect(function()
+        MoveSpaceship("forward")
+    end)
+
+    spaceshipMoveBackwardButton.MouseButton1Click:Connect(function()
+        MoveSpaceship("backward")
+    end)
+
+    spaceshipMoveLeftButton.MouseButton1Click:Connect(function()
+        MoveSpaceship("left")
+    end)
+
+    spaceshipMoveRightButton.MouseButton1Click:Connect(function()
+        MoveSpaceship("right")
+    end)
+
+    spaceshipMoveUpButton.MouseButton1Click:Connect(function()
+        MoveSpaceship("up")
+    end)
+
+    spaceshipMoveDownButton.MouseButton1Click:Connect(function()
+        MoveSpaceship("down")
+    end)
+
+    -- 飞船模式UI缩放功能
+    spaceshipScaleUpButton.MouseButton1Click:Connect(function()
+        spaceshipUIScale.Scale = math.min(spaceshipUIScale.Scale + 0.1, 1.5)
+        spaceshipScaleLabel.Text = "UI大小: " .. string.format("%.1f", spaceshipUIScale.Scale)
+    end)
+
+    spaceshipScaleDownButton.MouseButton1Click:Connect(function()
+        spaceshipUIScale.Scale = math.max(spaceshipUIScale.Scale - 0.1, 0.5)
+        spaceshipScaleLabel.Text = "UI大小: " .. string.format("%.1f", spaceshipUIScale.Scale)
+    end)
+
+    -- 选择模式开关功能
+    selectModeButton.MouseButton1Click:Connect(function()
+        selectMode = not selectMode
+        if selectMode then
+            selectModeButton.Text = "选择模式: 开启"
+            selectModeButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            print("选择模式已开启")
+        else
+            selectModeButton.Text = "选择模式: 关闭"
+            selectModeButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            print("选择模式已关闭")
+        end
+    end)
+
+    -- 飞船模式开关功能
+    spaceshipButton.MouseButton1Click:Connect(function()
+        -- 检查是否有固定的物体
+        local hasFixedParts = false
+        for _ in pairs(_G.fixedParts) do
+            hasFixedParts = true
+            break
+        end
+        
+        if hasFixedParts then
+            _G.spaceshipMode = true
+            controlPanel.Visible = false
+            spaceshipPanel.Visible = true
+            openPanelButton.Visible = false
+            print("飞船模式已开启，控制所有固定物体")
+            
+            -- 初始化飞船模式，但不立即移动
+            for part, _ in pairs(_G.fixedParts) do
+                if part and part.Parent then
+                    -- 取消固定状态，让物体可以移动
+                    part.Anchored = false
+                    
+                    -- 创建BodyVelocity但不设置速度（等待移动指令）
+                    local bodyVelocity = Instance.new("BodyVelocity")
+                    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyVelocity.Velocity = Vector3.new(0, 0, 0) -- 初始速度为0
+                    bodyVelocity.Parent = part
+                    _G.spaceshipVelocities[part] = bodyVelocity
+                    
+                    -- 创建BodyGyro防止旋转
+                    local bodyGyro = Instance.new("BodyGyro")
+                    bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyGyro.P = 1000
+                    bodyGyro.D = 500
+                    bodyGyro.CFrame = part.CFrame  -- 保持当前方向
+                    bodyGyro.Parent = part
+                    _G.spaceshipGyros[part] = bodyGyro
+                end
+            end
+        else
+            print("没有固定的物体，无法开启飞船模式")
+        end
+    end)
+
+    -- 关闭飞船模式功能
+    closeSpaceshipButton.MouseButton1Click:Connect(function()
+        ExitSpaceshipMode()
+        spaceshipPanel.Visible = false
+        openPanelButton.Visible = true
+        print("飞船模式已关闭")
+    end)
+
+    -- 新增：停止移动按钮功能
+    stopMovementButton.MouseButton1Click:Connect(function()
+        StopSpaceshipMovement()
+        print("紧急刹车！所有物体已停止移动")
+    end)
+
+    -- 关闭面板功能
+    closeButton.MouseButton1Click:Connect(function()
+        controlPanel.Visible = false
+        openPanelButton.Visible = true
+    end)
+
+    -- 打开面板功能
+    openPanelButton.MouseButton1Click:Connect(function()
+        controlPanel.Visible = true
+        openPanelButton.Visible = false
+    end)
+
+    -- 监听选择状态变化，更新UI显示
+    local function updateUI()
+        if _G.selectedPart then
+            distancePanel.Visible = not _G.isFixed
+            controlPanel.Visible = controlPanel.Visible -- 保持当前状态
+        else
+            distancePanel.Visible = false
+        end
+    end
+
+    -- 定期更新UI
+    RunService.Heartbeat:Connect(updateUI)
+
+    return screenGui
+end
+
+-- 添加错误处理
+local success, err = pcall(function()
+    CreateMobileGUI()
+end)
+
+if not success then
+    warn("GUI创建失败: " .. tostring(err))
+end
