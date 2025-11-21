@@ -1016,9 +1016,9 @@ local function CreateMobileGUI()
         end
     end)
 
-    -- 距离控制功能
+    -- 距离控制功能 - 修改上限为300
     distanceUpButton.MouseButton1Click:Connect(function()
-        _G.followDistance = math.min(_G.followDistance + 1, 50)
+        _G.followDistance = math.min(_G.followDistance + 1, 300)
         distanceLabel.Text = "距离: " .. _G.followDistance
     end)
 
