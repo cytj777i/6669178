@@ -19,7 +19,7 @@ end
 -- 全局变量
 _G.selectedPart = nil
 _G.selectedHighlight = nil
-_G.floatSpeed = 10
+_G.floatSpeed = 20 -- 增加跟随速度
 _G.followDistance = 20
 _G.isFollowing = false
 _G.rotationSpeed = 0.5
@@ -31,6 +31,8 @@ _G.spaceshipMode = false -- 飞船模式状态
 _G.spaceshipSpeed = 20 -- 飞船模式移动速度
 _G.spaceshipVelocities = {} -- 新增：存储飞船模式中物体的速度
 _G.spaceshipGyros = {} -- 新增：存储飞船模式中物体的陀螺仪
+_G.followVelocity = nil -- 新增：跟随模式的速度控制器
+_G.followGyro = nil -- 新增：跟随模式的陀螺仪
 
 -- 设置模拟半径
 local function setupSimulationRadius()
@@ -56,7 +58,7 @@ local function setupAutoReconnect()
         character:WaitForChild("Humanoid")
         setupSimulationRadius()
         print("角色已重生，漂浮控制脚本已自动重新连接")
-        
+
         -- 重生后重置跟随状态，但保持固定状态
         if _G.selectedPart then
             _G.isFollowing = false
@@ -129,30 +131,44 @@ local function StopPart()
         _G.followConnection:Disconnect()
         _G.followConnection = nil
     end
+    -- 清理跟随模式的控制器
+    if _G.followVelocity then
+        _G.followVelocity:Destroy()
+        _G.followVelocity = nil
+    end
+    if _G.followGyro then
+        _G.followGyro:Destroy()
+        _G.followGyro = nil
+    end
 end
 
--- 跟随视角功能
+-- 跟随视角功能 - 修改为使用BodyVelocity实现类似飞船模式的飞行
 local function FollowCamera()
     if not _G.selectedPart or not _G.isFollowing or _G.isFixed then return end
-    
+
     StopPart() -- 清除旧的身体力
-    
+
     local camera = Workspace.CurrentCamera
     if not camera then return end
-    
-    -- 使用BodyPosition和BodyGyro的组合来实现平滑跟随
-    local bodyPosition = Instance.new("BodyPosition")
-    bodyPosition.MaxForce = Vector3.new(40000, 40000, 40000)
-    bodyPosition.P = 10000  -- 增加P值提高响应速度
-    bodyPosition.D = 1000   -- 增加D值减少振荡
-    bodyPosition.Parent = _G.selectedPart
-    
+
+    -- 取消固定状态，让物体可以移动
+    _G.selectedPart.Anchored = false
+
+    -- 使用BodyVelocity和BodyGyro的组合来实现平滑跟随（类似飞船模式）
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    bodyVelocity.Parent = _G.selectedPart
+    _G.followVelocity = bodyVelocity
+
     local bodyGyro = Instance.new("BodyGyro")
-    bodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
+    bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
     bodyGyro.P = 1000
     bodyGyro.D = 500
+    bodyGyro.CFrame = _G.selectedPart.CFrame  -- 保持当前方向
     bodyGyro.Parent = _G.selectedPart
-    
+    _G.followGyro = bodyGyro
+
     -- 每帧更新位置和旋转
     _G.followConnection = RunService.Heartbeat:Connect(function()
         if not _G.selectedPart or not _G.isFollowing or _G.isFixed then
@@ -162,16 +178,27 @@ local function FollowCamera()
             end
             return
         end
-        
+
         local cameraCFrame = camera.CFrame
         local lookVector = cameraCFrame.LookVector
-        
+
         -- 正确计算目标位置，考虑Y轴高度
         local targetPosition = cameraCFrame.Position + (lookVector * _G.followDistance)
+
+        -- 计算从当前位置到目标位置的方向
+        local direction = (targetPosition - _G.selectedPart.Position)
         
-        -- 设置目标位置
-        bodyPosition.Position = targetPosition
+        -- 如果距离较远，使用最大速度；如果接近目标，减速
+        local distance = direction.Magnitude
+        local speedMultiplier = math.min(1, distance / 5) -- 距离5以内开始减速
         
+        -- 设置速度向量
+        if distance > 0.5 then
+            bodyVelocity.Velocity = direction.Unit * _G.floatSpeed * speedMultiplier
+        else
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+
         -- 保持物体当前的方向，不强制朝向摄像机
         bodyGyro.CFrame = _G.selectedPart.CFrame
     end)
@@ -181,14 +208,14 @@ end
 local function FixPart()
     if _G.selectedPart and not _G.isFixed then
         StopPart() -- 停止所有运动
-        
+
         -- 设置零件为固定状态，使其完全静止
         _G.selectedPart.Anchored = true
-        
+
         -- 标记为已固定并添加到固定列表
         _G.isFixed = true
         _G.fixedParts[_G.selectedPart] = true
-        
+
         return true
     end
     return false
@@ -201,14 +228,14 @@ local function UnfixPart()
         _G.selectedPart.Anchored = false
         _G.isFixed = false
         _G.fixedParts[_G.selectedPart] = nil
-        
+
         -- 重新开始跟随
         _G.isFollowing = true
         FollowCamera()
-        
+
         -- 重新添加高亮
         createHighlight(_G.selectedPart)
-        
+
         return true
     end
     return false
@@ -229,7 +256,7 @@ local function SelectPart(part)
             UnfixPart()
             return true
         end
-        
+
         -- 取消之前的选择（只影响当前选择的物体，不影响其他已固定的物体）
         if _G.selectedPart and _G.selectedPart ~= part then
             -- 如果之前选择的物体没有被固定，则停止它
@@ -246,14 +273,14 @@ local function SelectPart(part)
 
         -- 检查新选择的零件是否已经在固定列表中
         local wasFixed = _G.fixedParts[part]
-        
+
         -- 选择新零件
         _G.selectedPart = part
         _G.isFixed = wasFixed or false
-        
+
         -- 添加高亮
         createHighlight(part)
-        
+
         -- 如果零件没有被固定，则开始跟随
         if not _G.isFixed then
             _G.isFollowing = true
@@ -261,7 +288,7 @@ local function SelectPart(part)
         else
             _G.isFollowing = false
         end
-        
+
         return true
     end
     return false
@@ -283,7 +310,7 @@ local function ApplyFlip(axis, angleDegrees)
     if _G.selectedPart and not _G.isFixed then
         -- 计算旋转角度（弧度）
         local angleRadians = math.rad(angleDegrees)
-        
+
         -- 根据轴创建旋转CFrame
         local rotationCFrame
         if axis == "X" then
@@ -293,10 +320,10 @@ local function ApplyFlip(axis, angleDegrees)
         elseif axis == "Z" then
             rotationCFrame = CFrame.Angles(0, 0, angleRadians)
         end
-        
+
         -- 应用旋转
         _G.selectedPart.CFrame = _G.selectedPart.CFrame * rotationCFrame
-        
+
         -- 重要：更新BodyGyro以保持新的旋转方向
         for _, child in ipairs(_G.selectedPart:GetChildren()) do
             if child:IsA("BodyGyro") then
@@ -310,13 +337,13 @@ end
 -- 飞船模式翻转函数 - 应用于所有固定物体
 local function ApplySpaceshipFlip(axis, angleDegrees)
     if not _G.spaceshipMode then return end
-    
+
     local camera = Workspace.CurrentCamera
     if not camera then return end
-    
+
     local angleRadians = math.rad(angleDegrees)
     local rotationCFrame
-    
+
     if axis == "X" then
         rotationCFrame = CFrame.Angles(angleRadians, 0, 0)
     elseif axis == "Y" then
@@ -324,12 +351,12 @@ local function ApplySpaceshipFlip(axis, angleDegrees)
     elseif axis == "Z" then
         rotationCFrame = CFrame.Angles(0, 0, angleRadians)
     end
-    
+
     -- 对每个固定物体应用旋转
     for part, _ in pairs(_G.fixedParts) do
         if part and part.Parent then
             part.CFrame = part.CFrame * rotationCFrame
-            
+
             -- 更新陀螺仪以保持新方向
             if _G.spaceshipGyros[part] then
                 _G.spaceshipGyros[part].CFrame = part.CFrame
@@ -338,16 +365,16 @@ local function ApplySpaceshipFlip(axis, angleDegrees)
     end
 end
 
--- 飞船模式移动函数 - 修复：使用BodyVelocity让物体真正飞起来，并防止旋转
+-- 飞船模式移动函数
 local function MoveSpaceship(direction)
     if not _G.spaceshipMode then return end
-    
+
     local camera = Workspace.CurrentCamera
     if not camera then return end
-    
+
     local moveVector = Vector3.new(0, 0, 0)
     local cameraCFrame = camera.CFrame
-    
+
     if direction == "forward" then
         moveVector = cameraCFrame.LookVector * _G.spaceshipSpeed
     elseif direction == "backward" then
@@ -361,13 +388,13 @@ local function MoveSpaceship(direction)
     elseif direction == "down" then
         moveVector = Vector3.new(0, -_G.spaceshipSpeed, 0)
     end
-    
+
     -- 对每个固定物体应用移动
     for part, _ in pairs(_G.fixedParts) do
         if part and part.Parent then
             -- 取消固定状态，让物体可以移动
             part.Anchored = false
-            
+
             -- 检查是否已经有BodyVelocity，如果没有则创建
             if not _G.spaceshipVelocities[part] then
                 local bodyVelocity = Instance.new("BodyVelocity")
@@ -375,7 +402,7 @@ local function MoveSpaceship(direction)
                 bodyVelocity.Parent = part
                 _G.spaceshipVelocities[part] = bodyVelocity
             end
-            
+
             -- 检查是否已经有BodyGyro，如果没有则创建（防止旋转）
             if not _G.spaceshipGyros[part] then
                 local bodyGyro = Instance.new("BodyGyro")
@@ -386,10 +413,10 @@ local function MoveSpaceship(direction)
                 bodyGyro.Parent = part
                 _G.spaceshipGyros[part] = bodyGyro
             end
-            
+
             -- 设置速度
             _G.spaceshipVelocities[part].Velocity = moveVector
-            
+
             -- 保持陀螺仪方向
             if _G.spaceshipGyros[part] then
                 _G.spaceshipGyros[part].CFrame = part.CFrame
@@ -410,30 +437,30 @@ end
 -- 退出飞船模式
 local function ExitSpaceshipMode()
     _G.spaceshipMode = false
-    
+
     -- 停止所有移动
     StopSpaceshipMovement()
-    
+
     -- 清理BodyVelocity、BodyGyro并重新固定物体
     for part, bodyVelocity in pairs(_G.spaceshipVelocities) do
         if bodyVelocity and bodyVelocity.Parent then
             bodyVelocity:Destroy()
         end
     end
-    
+
     for part, bodyGyro in pairs(_G.spaceshipGyros) do
         if bodyGyro and bodyGyro.Parent then
             bodyGyro:Destroy()
         end
     end
-    
+
     -- 重新固定物体
     for part, _ in pairs(_G.fixedParts) do
         if part and part.Parent then
             part.Anchored = true
         end
     end
-    
+
     _G.spaceshipVelocities = {}
     _G.spaceshipGyros = {}
 end
@@ -464,54 +491,11 @@ local function CreateMobileGUI()
 
     MakeDraggable(selectModeButton)
 
-    -- 距离控制UI - 只在选择物体且未固定时显示
-    local distancePanel = Instance.new("Frame")
-    distancePanel.Name = "DistancePanel"
-    distancePanel.Size = UDim2.new(0, 200, 0, 60)
-    distancePanel.Position = UDim2.new(0.5, -100, 0, 10)
-    distancePanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    distancePanel.BackgroundTransparency = 0.3
-    distancePanel.BorderSizePixel = 0
-    distancePanel.Visible = false
-    distancePanel.Parent = screenGui
-
-    MakeDraggable(distancePanel)
-
-    local distanceLabel = Instance.new("TextLabel")
-    distanceLabel.Name = "DistanceLabel"
-    distanceLabel.Size = UDim2.new(1, 0, 0, 30)
-    distanceLabel.Position = UDim2.new(0, 0, 0, 0)
-    distanceLabel.Text = "距离: " .. _G.followDistance
-    distanceLabel.TextColor3 = Color3.new(1, 1, 1)
-    distanceLabel.BackgroundTransparency = 1
-    distanceLabel.TextSize = 16
-    distanceLabel.Parent = distancePanel
-
-    local distanceDownButton = Instance.new("TextButton")
-    distanceDownButton.Name = "DistanceDown"
-    distanceDownButton.Size = UDim2.new(0, 60, 0, 30)
-    distanceDownButton.Position = UDim2.new(0, 10, 0, 30)
-    distanceDownButton.Text = "-"
-    distanceDownButton.TextSize = 20
-    distanceDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-    distanceDownButton.TextColor3 = Color3.new(1, 1, 1)
-    distanceDownButton.Parent = distancePanel
-
-    local distanceUpButton = Instance.new("TextButton")
-    distanceUpButton.Name = "DistanceUp"
-    distanceUpButton.Size = UDim2.new(0, 60, 0, 30)
-    distanceUpButton.Position = UDim2.new(1, -70, 0, 30)
-    distanceUpButton.Text = "+"
-    distanceUpButton.TextSize = 20
-    distanceUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    distanceUpButton.TextColor3 = Color3.new(1, 1, 1)
-    distanceUpButton.Parent = distancePanel
-
-    -- 控制面板
+    -- 距离和速度控制UI - 缩小尺寸并添加速度控制
     local controlPanel = Instance.new("Frame")
-    controlPanel.Name = "ControlPanel"
-    controlPanel.Size = UDim2.new(0, 320, 0, 400)
-    controlPanel.Position = UDim2.new(0.5, -160, 0.5, -200)
+    controlPanel.Name = "DistanceSpeedPanel"
+    controlPanel.Size = UDim2.new(0, 180, 0, 100) -- 缩小宽度，增加高度以容纳速度控制
+    controlPanel.Position = UDim2.new(0.5, -90, 0, 10)
     controlPanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     controlPanel.BackgroundTransparency = 0.3
     controlPanel.BorderSizePixel = 0
@@ -520,10 +504,85 @@ local function CreateMobileGUI()
 
     MakeDraggable(controlPanel)
 
+    -- 距离控制部分
+    local distanceLabel = Instance.new("TextLabel")
+    distanceLabel.Name = "DistanceLabel"
+    distanceLabel.Size = UDim2.new(1, 0, 0, 25)
+    distanceLabel.Position = UDim2.new(0, 0, 0, 0)
+    distanceLabel.Text = "距离: " .. _G.followDistance
+    distanceLabel.TextColor3 = Color3.new(1, 1, 1)
+    distanceLabel.BackgroundTransparency = 1
+    distanceLabel.TextSize = 14 -- 缩小字体
+    distanceLabel.Parent = controlPanel
+
+    local distanceDownButton = Instance.new("TextButton")
+    distanceDownButton.Name = "DistanceDown"
+    distanceDownButton.Size = UDim2.new(0, 50, 0, 25) -- 缩小按钮
+    distanceDownButton.Position = UDim2.new(0, 10, 0, 25)
+    distanceDownButton.Text = "-"
+    distanceDownButton.TextSize = 16
+    distanceDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    distanceDownButton.TextColor3 = Color3.new(1, 1, 1)
+    distanceDownButton.Parent = controlPanel
+
+    local distanceUpButton = Instance.new("TextButton")
+    distanceUpButton.Name = "DistanceUp"
+    distanceUpButton.Size = UDim2.new(0, 50, 0, 25) -- 缩小按钮
+    distanceUpButton.Position = UDim2.new(1, -60, 0, 25)
+    distanceUpButton.Text = "+"
+    distanceUpButton.TextSize = 16
+    distanceUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    distanceUpButton.TextColor3 = Color3.new(1, 1, 1)
+    distanceUpButton.Parent = controlPanel
+
+    -- 速度控制部分 - 新增
+    local speedLabel = Instance.new("TextLabel")
+    speedLabel.Name = "SpeedLabel"
+    speedLabel.Size = UDim2.new(1, 0, 0, 25)
+    speedLabel.Position = UDim2.new(0, 0, 0, 50)
+    speedLabel.Text = "速度: " .. _G.floatSpeed
+    speedLabel.TextColor3 = Color3.new(1, 1, 1)
+    speedLabel.BackgroundTransparency = 1
+    speedLabel.TextSize = 14 -- 缩小字体
+    speedLabel.Parent = controlPanel
+
+    local speedDownButton = Instance.new("TextButton")
+    speedDownButton.Name = "SpeedDown"
+    speedDownButton.Size = UDim2.new(0, 50, 0, 25) -- 缩小按钮
+    speedDownButton.Position = UDim2.new(0, 10, 0, 75)
+    speedDownButton.Text = "-5"
+    speedDownButton.TextSize = 14
+    speedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    speedDownButton.TextColor3 = Color3.new(1, 1, 1)
+    speedDownButton.Parent = controlPanel
+
+    local speedUpButton = Instance.new("TextButton")
+    speedUpButton.Name = "SpeedUp"
+    speedUpButton.Size = UDim2.new(0, 50, 0, 25) -- 缩小按钮
+    speedUpButton.Position = UDim2.new(1, -60, 0, 75)
+    speedUpButton.Text = "+5"
+    speedUpButton.TextSize = 14
+    speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    speedUpButton.TextColor3 = Color3.new(1, 1, 1)
+    speedUpButton.Parent = controlPanel
+
+    -- 主控制面板
+    local mainControlPanel = Instance.new("Frame")
+    mainControlPanel.Name = "MainControlPanel"
+    mainControlPanel.Size = UDim2.new(0, 320, 0, 400)
+    mainControlPanel.Position = UDim2.new(0.5, -160, 0.5, -200)
+    mainControlPanel.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    mainControlPanel.BackgroundTransparency = 0.3
+    mainControlPanel.BorderSizePixel = 0
+    mainControlPanel.Visible = false
+    mainControlPanel.Parent = screenGui
+
+    MakeDraggable(mainControlPanel)
+
     -- UI缩放控制
     local uiScale = Instance.new("UIScale")
     uiScale.Scale = 1.0
-    uiScale.Parent = controlPanel
+    uiScale.Parent = mainControlPanel
 
     -- 动作按钮
     local fixButton = Instance.new("TextButton")
@@ -534,7 +593,7 @@ local function CreateMobileGUI()
     fixButton.TextSize = 16
     fixButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
     fixButton.TextColor3 = Color3.new(1, 1, 1)
-    fixButton.Parent = controlPanel
+    fixButton.Parent = mainControlPanel
 
     local unfixButton = Instance.new("TextButton")
     unfixButton.Name = "UnfixButton"
@@ -544,7 +603,7 @@ local function CreateMobileGUI()
     unfixButton.TextSize = 16
     unfixButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
     unfixButton.TextColor3 = Color3.new(1, 1, 1)
-    unfixButton.Parent = controlPanel
+    unfixButton.Parent = mainControlPanel
 
     -- 翻转控制标题
     local flipLabel = Instance.new("TextLabel")
@@ -555,7 +614,7 @@ local function CreateMobileGUI()
     flipLabel.TextColor3 = Color3.new(1, 1, 1)
     flipLabel.BackgroundTransparency = 1
     flipLabel.TextSize = 18
-    flipLabel.Parent = controlPanel
+    flipLabel.Parent = mainControlPanel
 
     -- 翻转角度控制
     local flipAngleDownButton = Instance.new("TextButton")
@@ -566,7 +625,7 @@ local function CreateMobileGUI()
     flipAngleDownButton.TextSize = 16
     flipAngleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     flipAngleDownButton.TextColor3 = Color3.new(1, 1, 1)
-    flipAngleDownButton.Parent = controlPanel
+    flipAngleDownButton.Parent = mainControlPanel
 
     local flipAngleUpButton = Instance.new("TextButton")
     flipAngleUpButton.Name = "FlipAngleUp"
@@ -576,7 +635,7 @@ local function CreateMobileGUI()
     flipAngleUpButton.TextSize = 16
     flipAngleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     flipAngleUpButton.TextColor3 = Color3.new(1, 1, 1)
-    flipAngleUpButton.Parent = controlPanel
+    flipAngleUpButton.Parent = mainControlPanel
 
     -- 翻转按钮
     local flipUpButton = Instance.new("TextButton")
@@ -587,7 +646,7 @@ local function CreateMobileGUI()
     flipUpButton.TextSize = 16
     flipUpButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipUpButton.TextColor3 = Color3.new(1, 1, 1)
-    flipUpButton.Parent = controlPanel
+    flipUpButton.Parent = mainControlPanel
 
     local flipDownButton = Instance.new("TextButton")
     flipDownButton.Name = "FlipDown"
@@ -597,7 +656,7 @@ local function CreateMobileGUI()
     flipDownButton.TextSize = 16
     flipDownButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipDownButton.TextColor3 = Color3.new(1, 1, 1)
-    flipDownButton.Parent = controlPanel
+    flipDownButton.Parent = mainControlPanel
 
     local flipLeftButton = Instance.new("TextButton")
     flipLeftButton.Name = "FlipLeft"
@@ -607,7 +666,7 @@ local function CreateMobileGUI()
     flipLeftButton.TextSize = 16
     flipLeftButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipLeftButton.TextColor3 = Color3.new(1, 1, 1)
-    flipLeftButton.Parent = controlPanel
+    flipLeftButton.Parent = mainControlPanel
 
     local flipRightButton = Instance.new("TextButton")
     flipRightButton.Name = "FlipRight"
@@ -617,7 +676,7 @@ local function CreateMobileGUI()
     flipRightButton.TextSize = 16
     flipRightButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipRightButton.TextColor3 = Color3.new(1, 1, 1)
-    flipRightButton.Parent = controlPanel
+    flipRightButton.Parent = mainControlPanel
 
     -- UI缩放控制
     local scaleLabel = Instance.new("TextLabel")
@@ -628,7 +687,7 @@ local function CreateMobileGUI()
     scaleLabel.TextColor3 = Color3.new(1, 1, 1)
     scaleLabel.BackgroundTransparency = 1
     scaleLabel.TextSize = 16
-    scaleLabel.Parent = controlPanel
+    scaleLabel.Parent = mainControlPanel
 
     local scaleDownButton = Instance.new("TextButton")
     scaleDownButton.Name = "ScaleDown"
@@ -638,7 +697,7 @@ local function CreateMobileGUI()
     scaleDownButton.TextSize = 20
     scaleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     scaleDownButton.TextColor3 = Color3.new(1, 1, 1)
-    scaleDownButton.Parent = controlPanel
+    scaleDownButton.Parent = mainControlPanel
 
     local scaleUpButton = Instance.new("TextButton")
     scaleUpButton.Name = "ScaleUp"
@@ -648,7 +707,7 @@ local function CreateMobileGUI()
     scaleUpButton.TextSize = 20
     scaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     scaleUpButton.TextColor3 = Color3.new(1, 1, 1)
-    scaleUpButton.Parent = controlPanel
+    scaleUpButton.Parent = mainControlPanel
 
     -- 飞船模式按钮
     local spaceshipButton = Instance.new("TextButton")
@@ -659,7 +718,7 @@ local function CreateMobileGUI()
     spaceshipButton.TextSize = 14
     spaceshipButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
     spaceshipButton.TextColor3 = Color3.new(1, 1, 1)
-    spaceshipButton.Parent = controlPanel
+    spaceshipButton.Parent = mainControlPanel
 
     -- 关闭面板按钮
     local closeButton = Instance.new("TextButton")
@@ -670,7 +729,7 @@ local function CreateMobileGUI()
     closeButton.TextSize = 16
     closeButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     closeButton.TextColor3 = Color3.new(1, 1, 1)
-    closeButton.Parent = controlPanel
+    closeButton.Parent = mainControlPanel
 
     -- 打开面板按钮 - 右上角
     local openPanelButton = Instance.new("TextButton")
@@ -717,35 +776,35 @@ local function CreateMobileGUI()
     spaceshipTitle.Parent = spaceshipPanel
 
     -- 速度控制
-    local speedLabel = Instance.new("TextLabel")
-    speedLabel.Name = "SpeedLabel"
-    speedLabel.Size = UDim2.new(1, 0, 0, 30)
-    speedLabel.Position = UDim2.new(0, 0, 0, 60)
-    speedLabel.Text = "速度: " .. _G.spaceshipSpeed
-    speedLabel.TextColor3 = Color3.new(1, 1, 1)
-    speedLabel.BackgroundTransparency = 1
-    speedLabel.TextSize = 18
-    speedLabel.Parent = spaceshipPanel
+    local spaceshipSpeedLabel = Instance.new("TextLabel")
+    spaceshipSpeedLabel.Name = "SpaceshipSpeedLabel"
+    spaceshipSpeedLabel.Size = UDim2.new(1, 0, 0, 30)
+    spaceshipSpeedLabel.Position = UDim2.new(0, 0, 0, 60)
+    spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
+    spaceshipSpeedLabel.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipSpeedLabel.BackgroundTransparency = 1
+    spaceshipSpeedLabel.TextSize = 18
+    spaceshipSpeedLabel.Parent = spaceshipPanel
 
-    local speedDownButton = Instance.new("TextButton")
-    speedDownButton.Name = "SpeedDown"
-    speedDownButton.Size = UDim2.new(0, 40, 0, 30)
-    speedDownButton.Position = UDim2.new(0.3, -20, 0, 100)
-    speedDownButton.Text = "-"
-    speedDownButton.TextSize = 16
-    speedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-    speedDownButton.TextColor3 = Color3.new(1, 1, 1)
-    speedDownButton.Parent = spaceshipPanel
+    local spaceshipSpeedDownButton = Instance.new("TextButton")
+    spaceshipSpeedDownButton.Name = "SpaceshipSpeedDown"
+    spaceshipSpeedDownButton.Size = UDim2.new(0, 40, 0, 30)
+    spaceshipSpeedDownButton.Position = UDim2.new(0.3, -20, 0, 100)
+    spaceshipSpeedDownButton.Text = "-"
+    spaceshipSpeedDownButton.TextSize = 16
+    spaceshipSpeedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    spaceshipSpeedDownButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipSpeedDownButton.Parent = spaceshipPanel
 
-    local speedUpButton = Instance.new("TextButton")
-    speedUpButton.Name = "SpeedUp"
-    speedUpButton.Size = UDim2.new(0, 40, 0, 30)
-    speedUpButton.Position = UDim2.new(0.7, -20, 0, 100)
-    speedUpButton.Text = "+"
-    speedUpButton.TextSize = 16
-    speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    speedUpButton.TextColor3 = Color3.new(1, 1, 1)
-    speedUpButton.Parent = spaceshipPanel
+    local spaceshipSpeedUpButton = Instance.new("TextButton")
+    spaceshipSpeedUpButton.Name = "SpaceshipSpeedUp"
+    spaceshipSpeedUpButton.Size = UDim2.new(0, 40, 0, 30)
+    spaceshipSpeedUpButton.Position = UDim2.new(0.7, -20, 0, 100)
+    spaceshipSpeedUpButton.Text = "+"
+    spaceshipSpeedUpButton.TextSize = 16
+    spaceshipSpeedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    spaceshipSpeedUpButton.TextColor3 = Color3.new(1, 1, 1)
+    spaceshipSpeedUpButton.Parent = spaceshipPanel
 
     -- 飞船模式翻转控制标题
     local spaceshipFlipLabel = Instance.new("TextLabel")
@@ -968,17 +1027,28 @@ local function CreateMobileGUI()
         distanceLabel.Text = "距离: " .. _G.followDistance
     end)
 
+    -- 速度控制功能 - 新增
+    speedUpButton.MouseButton1Click:Connect(function()
+        _G.floatSpeed = math.min(_G.floatSpeed + 5, 100)
+        speedLabel.Text = "速度: " .. _G.floatSpeed
+    end)
+
+    speedDownButton.MouseButton1Click:Connect(function()
+        _G.floatSpeed = math.max(_G.floatSpeed - 5, 1)
+        speedLabel.Text = "速度: " .. _G.floatSpeed
+    end)
+
     -- 固定按钮功能
     fixButton.MouseButton1Click:Connect(function()
         if FixPart() then
-            distancePanel.Visible = false
+            controlPanel.Visible = false
         end
     end)
 
     -- 解除固定按钮功能
     unfixButton.MouseButton1Click:Connect(function()
         if UnfixPart() then
-            distancePanel.Visible = true
+            controlPanel.Visible = true
         end
     end)
 
@@ -1024,14 +1094,14 @@ local function CreateMobileGUI()
     end)
 
     -- 飞船模式速度控制
-    speedUpButton.MouseButton1Click:Connect(function()
+    spaceshipSpeedUpButton.MouseButton1Click:Connect(function()
         _G.spaceshipSpeed = math.min(_G.spaceshipSpeed + 5, 100)
-        speedLabel.Text = "速度: " .. _G.spaceshipSpeed
+        spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
     end)
 
-    speedDownButton.MouseButton1Click:Connect(function()
+    spaceshipSpeedDownButton.MouseButton1Click:Connect(function()
         _G.spaceshipSpeed = math.max(_G.spaceshipSpeed - 5, 1)
-        speedLabel.Text = "速度: " .. _G.spaceshipSpeed
+        spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
     end)
 
     -- 飞船模式翻转角度控制
@@ -1122,27 +1192,27 @@ local function CreateMobileGUI()
             hasFixedParts = true
             break
         end
-        
+
         if hasFixedParts then
             _G.spaceshipMode = true
-            controlPanel.Visible = false
+            mainControlPanel.Visible = false
             spaceshipPanel.Visible = true
             openPanelButton.Visible = false
             print("飞船模式已开启，控制所有固定物体")
-            
+
             -- 初始化飞船模式，但不立即移动
             for part, _ in pairs(_G.fixedParts) do
                 if part and part.Parent then
                     -- 取消固定状态，让物体可以移动
                     part.Anchored = false
-                    
+
                     -- 创建BodyVelocity但不设置速度（等待移动指令）
                     local bodyVelocity = Instance.new("BodyVelocity")
                     bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                     bodyVelocity.Velocity = Vector3.new(0, 0, 0) -- 初始速度为0
                     bodyVelocity.Parent = part
                     _G.spaceshipVelocities[part] = bodyVelocity
-                    
+
                     -- 创建BodyGyro防止旋转
                     local bodyGyro = Instance.new("BodyGyro")
                     bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
@@ -1174,23 +1244,23 @@ local function CreateMobileGUI()
 
     -- 关闭面板功能
     closeButton.MouseButton1Click:Connect(function()
-        controlPanel.Visible = false
+        mainControlPanel.Visible = false
         openPanelButton.Visible = true
     end)
 
     -- 打开面板功能
     openPanelButton.MouseButton1Click:Connect(function()
-        controlPanel.Visible = true
+        mainControlPanel.Visible = true
         openPanelButton.Visible = false
     end)
 
     -- 监听选择状态变化，更新UI显示
     local function updateUI()
         if _G.selectedPart then
-            distancePanel.Visible = not _G.isFixed
-            controlPanel.Visible = controlPanel.Visible -- 保持当前状态
+            controlPanel.Visible = not _G.isFixed
+            mainControlPanel.Visible = mainControlPanel.Visible -- 保持当前状态
         else
-            distancePanel.Visible = false
+            controlPanel.Visible = false
         end
     end
 
