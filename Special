@@ -892,12 +892,4 @@ end)
 
 if not success then
     warn("GUI创建失败: " .. tostring(err))
-
-    -- 显示错误信息
-    local errorMsg = Instance.new("Message")
-    errorMsg.Text = "GUI创建失败: " .. tostring(err)
-    errorMsg.Parent = Workspace
-    delay(5, function()
-        errorMsg:Destroy()
-    end)
-end
+--神秘Ai还给我搞个显示错误信息错误了个78😱
