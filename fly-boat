@@ -44,6 +44,9 @@ _G.rotationSpeed = 1
 _G.activeFlips = {} -- 跟踪正在进行的翻转
 _G.flipAngularVelocities = {} -- 存储角速度对象
 
+-- 新增：飞船模式移动方向跟踪
+_G.currentMoveDirection = nil -- 当前移动方向
+
 -- 设置模拟半径
 local function setupSimulationRadius()
     local success, err = pcall(function()
@@ -150,7 +153,7 @@ local function StopPart()
         _G.followGyro:Destroy()
         _G.followGyro = nil
     end
-    
+
     -- 停止所有翻转
     for part, _ in pairs(_G.activeFlips) do
         _G.activeFlips[part] = nil
@@ -267,46 +270,63 @@ local function IsPartControllable(part)
            not part.Parent:FindFirstChild("Head") and part.Parent ~= LocalPlayer.Character
 end
 
--- 选择零件函数 - 修复：不会影响已固定的其他物体
+-- 选择零件函数 - 修改：支持重复点击取消选择，但不会取消固定状态
 local function SelectPart(part)
     if IsPartControllable(part) then
-        -- 如果点击的是已选择的零件且已固定，则解除固定
-        if _G.selectedPart == part and _G.isFixed then
-            UnfixPart()
+        -- 如果点击的是已选择的零件（无论是否固定），则取消选择
+        if _G.selectedPart == part then
+            -- 停止该零件的所有运动（如果是跟随状态）
+            if not _G.isFixed then
+                StopPart()
+                _G.isFollowing = false
+            end
+            -- 移除高亮
+            removeHighlight()
+            -- 取消选择
+            _G.selectedPart = nil
+            _G.isFixed = false
             return true
         end
 
-        -- 取消之前的选择（只影响当前选择的物体，不影响其他已固定的物体）
-        if _G.selectedPart and _G.selectedPart ~= part then
-            -- 如果之前选择的物体没有被固定，则停止它
-            if not _G.fixedParts[_G.selectedPart] then
-                StopPart()
-                removeHighlight()
-                _G.isFollowing = false
-                _G.isFixed = false
-            else
-                -- 如果之前选择的物体是固定的，只移除高亮，保持固定状态
+        -- 如果零件是已固定的，但不在当前选择中，则选择它但不开始跟随
+        if _G.fixedParts[part] then
+            -- 取消之前的选择
+            if _G.selectedPart then
+                if not _G.fixedParts[_G.selectedPart] then
+                    StopPart()
+                    _G.isFollowing = false
+                end
                 removeHighlight()
             end
+
+            -- 选择新零件
+            _G.selectedPart = part
+            _G.isFixed = true
+            _G.isFollowing = false
+
+            -- 添加高亮
+            createHighlight(part)
+            return true
         end
 
-        -- 检查新选择的零件是否已经在固定列表中
-        local wasFixed = _G.fixedParts[part]
+        -- 选择新零件（未固定的）
+        -- 取消之前的选择
+        if _G.selectedPart then
+            if not _G.fixedParts[_G.selectedPart] then
+                StopPart()
+                _G.isFollowing = false
+            end
+            removeHighlight()
+        end
 
         -- 选择新零件
         _G.selectedPart = part
-        _G.isFixed = wasFixed or false
+        _G.isFixed = false
+        _G.isFollowing = true
 
-        -- 添加高亮
+        -- 添加高亮并开始跟随
         createHighlight(part)
-
-        -- 如果零件没有被固定，则开始跟随
-        if not _G.isFixed then
-            _G.isFollowing = true
-            FollowCamera()
-        else
-            _G.isFollowing = false
-        end
+        FollowCamera()
 
         return true
     end
@@ -345,7 +365,7 @@ local function ApplyFlip(axis, angleDegrees)
 
         -- 计算角速度（弧度/秒）
         local angleRadians = math.rad(angleDegrees) * _G.rotationSpeed
-        
+
         -- 根据轴设置角速度
         local angularVelocity = Vector3.new(0, 0, 0)
         if axis == "X" then
@@ -361,7 +381,7 @@ local function ApplyFlip(axis, angleDegrees)
         bodyAngularVelocity.AngularVelocity = angularVelocity
         bodyAngularVelocity.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
         bodyAngularVelocity.Parent = _G.selectedPart
-        
+
         _G.flipAngularVelocities[_G.selectedPart] = bodyAngularVelocity
         _G.activeFlips[_G.selectedPart] = {
             axis = axis,
@@ -373,7 +393,7 @@ local function ApplyFlip(axis, angleDegrees)
     end
 end
 
--- 飞船模式移动函数
+-- 飞船模式移动函数 - 修复：正确使用_G.spaceshipSpeed
 local function MoveSpaceship(direction)
     if not _G.spaceshipMode then return end
 
@@ -396,6 +416,9 @@ local function MoveSpaceship(direction)
     elseif direction == "down" then
         moveVector = Vector3.new(0, -_G.spaceshipSpeed, 0)
     end
+
+    -- 记录当前移动方向
+    _G.currentMoveDirection = direction
 
     -- 对每个固定物体应用移动
     for part, _ in pairs(_G.fixedParts) do
@@ -422,7 +445,7 @@ local function MoveSpaceship(direction)
                 _G.spaceshipGyros[part] = bodyGyro
             end
 
-            -- 设置速度
+            -- 设置速度 - 修复：正确应用速度
             _G.spaceshipVelocities[part].Velocity = moveVector
 
             -- 保持陀螺仪方向
@@ -440,11 +463,21 @@ local function StopSpaceshipMovement()
             bodyVelocity.Velocity = Vector3.new(0, 0, 0)
         end
     end
+    _G.currentMoveDirection = nil
+end
+
+-- 更新飞船模式速度（不改变方向）
+local function UpdateSpaceshipSpeed()
+    if not _G.spaceshipMode or not _G.currentMoveDirection then return end
+    
+    -- 使用当前移动方向重新计算速度，但不改变方向
+    MoveSpaceship(_G.currentMoveDirection)
 end
 
 -- 退出飞船模式
 local function ExitSpaceshipMode()
     _G.spaceshipMode = false
+    _G.currentMoveDirection = nil
 
     -- 停止所有移动
     StopSpaceshipMovement()
@@ -483,17 +516,17 @@ end
 local function SetupFlipDetection()
     RunService.Heartbeat:Connect(function()
         local currentTime = tick()
-        
+
         for part, flipData in pairs(_G.activeFlips) do
             if part and part.Parent and flipData.angularVelocity and flipData.angularVelocity.Parent then
                 -- 计算已经旋转的时间
                 local elapsedTime = currentTime - flipData.startTime
-                
+
                 -- 计算应该旋转的角度
                 local expectedAngle = math.abs(flipData.angularVelocity.AngularVelocity.X + 
                                               flipData.angularVelocity.AngularVelocity.Y + 
                                               flipData.angularVelocity.AngularVelocity.Z) * elapsedTime
-                
+
                 -- 如果旋转角度达到或超过目标角度，停止翻转
                 if expectedAngle >= math.abs(flipData.targetAngle) then
                     flipData.angularVelocity.AngularVelocity = Vector3.new(0, 0, 0)
@@ -576,7 +609,7 @@ local function CreateMobileGUI()
     distanceUpButton.TextColor3 = Color3.new(1, 1, 1)
     distanceUpButton.Parent = controlPanel
 
-    -- 速度控制部分 - 新增
+    -- 速度控制部分 - 新增，上限改为300
     local speedLabel = Instance.new("TextLabel")
     speedLabel.Name = "SpeedLabel"
     speedLabel.Size = UDim2.new(1, 0, 0, 25)
@@ -816,7 +849,7 @@ local function CreateMobileGUI()
     spaceshipTitle.TextScaled = false
     spaceshipTitle.Parent = spaceshipPanel
 
-    -- 速度控制
+    -- 速度控制 - 上限改为300
     local spaceshipSpeedLabel = Instance.new("TextLabel")
     spaceshipSpeedLabel.Name = "SpaceshipSpeedLabel"
     spaceshipSpeedLabel.Size = UDim2.new(1, 0, 0, 30)
@@ -995,9 +1028,9 @@ local function CreateMobileGUI()
         distanceLabel.Text = "距离: " .. _G.followDistance
     end)
 
-    -- 速度控制功能 - 新增
+    -- 速度控制功能 - 新增，上限改为300
     speedUpButton.MouseButton1Click:Connect(function()
-        _G.floatSpeed = math.min(_G.floatSpeed + 5, 100)
+        _G.floatSpeed = math.min(_G.floatSpeed + 5, 300)  -- 上限改为300
         speedLabel.Text = "速度: " .. _G.floatSpeed
     end)
 
@@ -1059,15 +1092,25 @@ local function CreateMobileGUI()
         scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
     end)
 
-    -- 飞船模式速度控制
+    -- 飞船模式速度控制 - 修复：只更新速度，不改变方向
     spaceshipSpeedUpButton.MouseButton1Click:Connect(function()
-        _G.spaceshipSpeed = math.min(_G.spaceshipSpeed + 5, 100)
+        _G.spaceshipSpeed = math.min(_G.spaceshipSpeed + 5, 300)  -- 上限改为300
         spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
+        
+        -- 如果飞船模式正在运行且有移动方向，只更新速度不改变方向
+        if _G.spaceshipMode and _G.currentMoveDirection then
+            UpdateSpaceshipSpeed()
+        end
     end)
 
     spaceshipSpeedDownButton.MouseButton1Click:Connect(function()
         _G.spaceshipSpeed = math.max(_G.spaceshipSpeed - 5, 1)
         spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
+        
+        -- 如果飞船模式正在运行且有移动方向，只更新速度不改变方向
+        if _G.spaceshipMode and _G.currentMoveDirection then
+            UpdateSpaceshipSpeed()
+        end
     end)
 
     -- 飞船模式移动控制
@@ -1131,6 +1174,7 @@ local function CreateMobileGUI()
 
         if hasFixedParts then
             _G.spaceshipMode = true
+            _G.currentMoveDirection = nil
             mainControlPanel.Visible = false
             spaceshipPanel.Visible = true
             openPanelButton.Visible = false
