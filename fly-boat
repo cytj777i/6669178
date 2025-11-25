@@ -9,6 +9,14 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 
+-- 显示作者信息
+local authorMessage = Instance.new("Message")
+authorMessage.Text = "关于控制未固定零件的脚本我搞了三个，这是第3个版本\n作者XTTT"
+authorMessage.Parent = Workspace
+delay(5, function()
+    authorMessage:Destroy()
+end)
+
 -- 等待本地玩家加载
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
@@ -994,6 +1002,20 @@ local function CreateMobileGUI()
     stopMovementButton.TextColor3 = Color3.new(1, 1, 1)
     stopMovementButton.Parent = spaceshipPanel
 
+    -- 新增：隐藏/显示飞船模式UI按钮 - 放在选择模式按钮下方
+    local toggleSpaceshipUIButton = Instance.new("TextButton")
+    toggleSpaceshipUIButton.Name = "ToggleSpaceshipUI"
+    toggleSpaceshipUIButton.Size = UDim2.new(0, 150, 0, 40)
+    toggleSpaceshipUIButton.Position = UDim2.new(1, -160, 0, 110) -- 在选择模式按钮下方
+    toggleSpaceshipUIButton.Text = "隐藏飞船模式UI"
+    toggleSpaceshipUIButton.TextSize = 14
+    toggleSpaceshipUIButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    toggleSpaceshipUIButton.TextColor3 = Color3.new(1, 1, 1)
+    toggleSpaceshipUIButton.Visible = false -- 初始不可见
+    toggleSpaceshipUIButton.Parent = screenGui
+
+    MakeDraggable(toggleSpaceshipUIButton)
+
     -- 选择模式状态
     local selectMode = false
 
@@ -1178,6 +1200,7 @@ local function CreateMobileGUI()
             mainControlPanel.Visible = false
             spaceshipPanel.Visible = true
             openPanelButton.Visible = false
+            toggleSpaceshipUIButton.Visible = true -- 显示隐藏飞船模式UI按钮
             print("飞船模式已开启，控制所有固定物体")
 
             -- 初始化飞船模式，但不立即移动
@@ -1213,7 +1236,18 @@ local function CreateMobileGUI()
         ExitSpaceshipMode()
         spaceshipPanel.Visible = false
         openPanelButton.Visible = true
+        toggleSpaceshipUIButton.Visible = false -- 隐藏隐藏飞船模式UI按钮
         print("飞船模式已关闭")
+    end)
+
+    -- 新增：隐藏/显示飞船模式UI按钮功能
+    toggleSpaceshipUIButton.MouseButton1Click:Connect(function()
+        spaceshipPanel.Visible = not spaceshipPanel.Visible
+        if spaceshipPanel.Visible then
+            toggleSpaceshipUIButton.Text = "隐藏飞船模式UI"
+        else
+            toggleSpaceshipUIButton.Text = "显示飞船模式UI"
+        end
     end)
 
     -- 新增：停止移动按钮功能
