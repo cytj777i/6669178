@@ -11,7 +11,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "关于控制未固定零件的脚本我搞了三个，这是第3个版本\n只能控制未固定零件，解除固定也是只能解除你固定的零件\n作者XTTT"
+authorMessage.Text = "关于控制未固定零件的脚本我搞了三个，这是第3个版本\n制作灵感来源于反重力状态脚本\n只能控制未固定零件，解除固定也是只能解除你固定的零件\n作者XTTT"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
