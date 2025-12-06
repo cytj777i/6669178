@@ -477,7 +477,7 @@ end
 -- 更新飞船模式速度（不改变方向）
 local function UpdateSpaceshipSpeed()
     if not _G.spaceshipMode or not _G.currentMoveDirection then return end
-    
+
     -- 使用当前移动方向重新计算速度，但不改变方向
     MoveSpaceship(_G.currentMoveDirection)
 end
@@ -560,6 +560,13 @@ local function CreateMobileGUI()
     screenGui.ResetOnSpawn = false
     screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
+    -- 创建圆角辅助函数
+    local function addUICorner(parent, radius)
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, radius or 8)
+        corner.Parent = parent
+    end
+
     -- 选择模式开关按钮 - 右上角
     local selectModeButton = Instance.new("TextButton")
     selectModeButton.Name = "SelectModeToggle"
@@ -570,6 +577,7 @@ local function CreateMobileGUI()
     selectModeButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
     selectModeButton.TextColor3 = Color3.new(1, 1, 1)
     selectModeButton.Parent = screenGui
+    addUICorner(selectModeButton, 8)
 
     MakeDraggable(selectModeButton)
 
@@ -583,6 +591,7 @@ local function CreateMobileGUI()
     controlPanel.BorderSizePixel = 0
     controlPanel.Visible = false
     controlPanel.Parent = screenGui
+    addUICorner(controlPanel, 12)
 
     MakeDraggable(controlPanel)
 
@@ -606,6 +615,7 @@ local function CreateMobileGUI()
     distanceDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     distanceDownButton.TextColor3 = Color3.new(1, 1, 1)
     distanceDownButton.Parent = controlPanel
+    addUICorner(distanceDownButton, 6)
 
     local distanceUpButton = Instance.new("TextButton")
     distanceUpButton.Name = "DistanceUp"
@@ -616,6 +626,7 @@ local function CreateMobileGUI()
     distanceUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     distanceUpButton.TextColor3 = Color3.new(1, 1, 1)
     distanceUpButton.Parent = controlPanel
+    addUICorner(distanceUpButton, 6)
 
     -- 速度控制部分 - 新增，上限改为300
     local speedLabel = Instance.new("TextLabel")
@@ -637,6 +648,7 @@ local function CreateMobileGUI()
     speedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     speedDownButton.TextColor3 = Color3.new(1, 1, 1)
     speedDownButton.Parent = controlPanel
+    addUICorner(speedDownButton, 6)
 
     local speedUpButton = Instance.new("TextButton")
     speedUpButton.Name = "SpeedUp"
@@ -647,6 +659,7 @@ local function CreateMobileGUI()
     speedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     speedUpButton.TextColor3 = Color3.new(1, 1, 1)
     speedUpButton.Parent = controlPanel
+    addUICorner(speedUpButton, 6)
 
     -- 主控制面板
     local mainControlPanel = Instance.new("Frame")
@@ -658,6 +671,7 @@ local function CreateMobileGUI()
     mainControlPanel.BorderSizePixel = 0
     mainControlPanel.Visible = false
     mainControlPanel.Parent = screenGui
+    addUICorner(mainControlPanel, 15)
 
     MakeDraggable(mainControlPanel)
 
@@ -676,6 +690,7 @@ local function CreateMobileGUI()
     fixButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
     fixButton.TextColor3 = Color3.new(1, 1, 1)
     fixButton.Parent = mainControlPanel
+    addUICorner(fixButton, 8)
 
     local unfixButton = Instance.new("TextButton")
     unfixButton.Name = "UnfixButton"
@@ -686,6 +701,7 @@ local function CreateMobileGUI()
     unfixButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
     unfixButton.TextColor3 = Color3.new(1, 1, 1)
     unfixButton.Parent = mainControlPanel
+    addUICorner(unfixButton, 8)
 
     -- 翻转控制标题
     local flipLabel = Instance.new("TextLabel")
@@ -708,6 +724,7 @@ local function CreateMobileGUI()
     flipAngleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     flipAngleDownButton.TextColor3 = Color3.new(1, 1, 1)
     flipAngleDownButton.Parent = mainControlPanel
+    addUICorner(flipAngleDownButton, 6)
 
     local flipAngleUpButton = Instance.new("TextButton")
     flipAngleUpButton.Name = "FlipAngleUp"
@@ -718,6 +735,7 @@ local function CreateMobileGUI()
     flipAngleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     flipAngleUpButton.TextColor3 = Color3.new(1, 1, 1)
     flipAngleUpButton.Parent = mainControlPanel
+    addUICorner(flipAngleUpButton, 6)
 
     -- 翻转按钮
     local flipUpButton = Instance.new("TextButton")
@@ -729,6 +747,7 @@ local function CreateMobileGUI()
     flipUpButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipUpButton.TextColor3 = Color3.new(1, 1, 1)
     flipUpButton.Parent = mainControlPanel
+    addUICorner(flipUpButton, 8)
 
     local flipDownButton = Instance.new("TextButton")
     flipDownButton.Name = "FlipDown"
@@ -739,6 +758,7 @@ local function CreateMobileGUI()
     flipDownButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipDownButton.TextColor3 = Color3.new(1, 1, 1)
     flipDownButton.Parent = mainControlPanel
+    addUICorner(flipDownButton, 8)
 
     local flipLeftButton = Instance.new("TextButton")
     flipLeftButton.Name = "FlipLeft"
@@ -749,6 +769,7 @@ local function CreateMobileGUI()
     flipLeftButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipLeftButton.TextColor3 = Color3.new(1, 1, 1)
     flipLeftButton.Parent = mainControlPanel
+    addUICorner(flipLeftButton, 8)
 
     local flipRightButton = Instance.new("TextButton")
     flipRightButton.Name = "FlipRight"
@@ -759,6 +780,7 @@ local function CreateMobileGUI()
     flipRightButton.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
     flipRightButton.TextColor3 = Color3.new(1, 1, 1)
     flipRightButton.Parent = mainControlPanel
+    addUICorner(flipRightButton, 8)
 
     -- UI缩放控制
     local scaleLabel = Instance.new("TextLabel")
@@ -780,6 +802,7 @@ local function CreateMobileGUI()
     scaleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     scaleDownButton.TextColor3 = Color3.new(1, 1, 1)
     scaleDownButton.Parent = mainControlPanel
+    addUICorner(scaleDownButton, 6)
 
     local scaleUpButton = Instance.new("TextButton")
     scaleUpButton.Name = "ScaleUp"
@@ -790,6 +813,7 @@ local function CreateMobileGUI()
     scaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     scaleUpButton.TextColor3 = Color3.new(1, 1, 1)
     scaleUpButton.Parent = mainControlPanel
+    addUICorner(scaleUpButton, 6)
 
     -- 飞船模式按钮
     local spaceshipButton = Instance.new("TextButton")
@@ -801,6 +825,7 @@ local function CreateMobileGUI()
     spaceshipButton.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
     spaceshipButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipButton.Parent = mainControlPanel
+    addUICorner(spaceshipButton, 8)
 
     -- 关闭面板按钮
     local closeButton = Instance.new("TextButton")
@@ -812,6 +837,7 @@ local function CreateMobileGUI()
     closeButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     closeButton.TextColor3 = Color3.new(1, 1, 1)
     closeButton.Parent = mainControlPanel
+    addUICorner(closeButton, 8)
 
     -- 打开面板按钮 - 右上角
     local openPanelButton = Instance.new("TextButton")
@@ -824,6 +850,7 @@ local function CreateMobileGUI()
     openPanelButton.TextColor3 = Color3.new(1, 1, 1)
     openPanelButton.Visible = true
     openPanelButton.Parent = screenGui
+    addUICorner(openPanelButton, 8)
 
     MakeDraggable(openPanelButton)
 
@@ -837,6 +864,7 @@ local function CreateMobileGUI()
     spaceshipPanel.BorderSizePixel = 0
     spaceshipPanel.Visible = false
     spaceshipPanel.Parent = screenGui
+    addUICorner(spaceshipPanel, 15)
 
     MakeDraggable(spaceshipPanel)
 
@@ -877,6 +905,7 @@ local function CreateMobileGUI()
     spaceshipSpeedDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     spaceshipSpeedDownButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipSpeedDownButton.Parent = spaceshipPanel
+    addUICorner(spaceshipSpeedDownButton, 6)
 
     local spaceshipSpeedUpButton = Instance.new("TextButton")
     spaceshipSpeedUpButton.Name = "SpaceshipSpeedUp"
@@ -887,6 +916,7 @@ local function CreateMobileGUI()
     spaceshipSpeedUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     spaceshipSpeedUpButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipSpeedUpButton.Parent = spaceshipPanel
+    addUICorner(spaceshipSpeedUpButton, 6)
 
     -- 飞船模式移动控制 - 重新设计布局，删除翻转部分
     local spaceshipMoveUpButton = Instance.new("TextButton")
@@ -898,6 +928,7 @@ local function CreateMobileGUI()
     spaceshipMoveUpButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
     spaceshipMoveUpButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipMoveUpButton.Parent = spaceshipPanel
+    addUICorner(spaceshipMoveUpButton, 8)
 
     local spaceshipMoveForwardButton = Instance.new("TextButton")
     spaceshipMoveForwardButton.Name = "SpaceshipMoveForward"
@@ -908,6 +939,7 @@ local function CreateMobileGUI()
     spaceshipMoveForwardButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
     spaceshipMoveForwardButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipMoveForwardButton.Parent = spaceshipPanel
+    addUICorner(spaceshipMoveForwardButton, 8)
 
     local spaceshipMoveDownButton = Instance.new("TextButton")
     spaceshipMoveDownButton.Name = "SpaceshipMoveDown"
@@ -918,6 +950,7 @@ local function CreateMobileGUI()
     spaceshipMoveDownButton.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
     spaceshipMoveDownButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipMoveDownButton.Parent = spaceshipPanel
+    addUICorner(spaceshipMoveDownButton, 8)
 
     local spaceshipMoveLeftButton = Instance.new("TextButton")
     spaceshipMoveLeftButton.Name = "SpaceshipMoveLeft"
@@ -928,6 +961,7 @@ local function CreateMobileGUI()
     spaceshipMoveLeftButton.BackgroundColor3 = Color3.fromRGB(0, 0, 150)
     spaceshipMoveLeftButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipMoveLeftButton.Parent = spaceshipPanel
+    addUICorner(spaceshipMoveLeftButton, 8)
 
     local spaceshipMoveRightButton = Instance.new("TextButton")
     spaceshipMoveRightButton.Name = "SpaceshipMoveRight"
@@ -938,6 +972,7 @@ local function CreateMobileGUI()
     spaceshipMoveRightButton.BackgroundColor3 = Color3.fromRGB(0, 0, 150)
     spaceshipMoveRightButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipMoveRightButton.Parent = spaceshipPanel
+    addUICorner(spaceshipMoveRightButton, 8)
 
     local spaceshipMoveBackwardButton = Instance.new("TextButton")
     spaceshipMoveBackwardButton.Name = "SpaceshipMoveBackward"
@@ -948,6 +983,7 @@ local function CreateMobileGUI()
     spaceshipMoveBackwardButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
     spaceshipMoveBackwardButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipMoveBackwardButton.Parent = spaceshipPanel
+    addUICorner(spaceshipMoveBackwardButton, 8)
 
     -- 飞船模式UI缩放控制
     local spaceshipScaleLabel = Instance.new("TextLabel")
@@ -969,6 +1005,7 @@ local function CreateMobileGUI()
     spaceshipScaleDownButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
     spaceshipScaleDownButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipScaleDownButton.Parent = spaceshipPanel
+    addUICorner(spaceshipScaleDownButton, 6)
 
     local spaceshipScaleUpButton = Instance.new("TextButton")
     spaceshipScaleUpButton.Name = "SpaceshipScaleUp"
@@ -979,6 +1016,7 @@ local function CreateMobileGUI()
     spaceshipScaleUpButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
     spaceshipScaleUpButton.TextColor3 = Color3.new(1, 1, 1)
     spaceshipScaleUpButton.Parent = spaceshipPanel
+    addUICorner(spaceshipScaleUpButton, 6)
 
     -- 关闭飞船模式按钮 - 调整到左边
     local closeSpaceshipButton = Instance.new("TextButton")
@@ -990,6 +1028,7 @@ local function CreateMobileGUI()
     closeSpaceshipButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     closeSpaceshipButton.TextColor3 = Color3.new(1, 1, 1)
     closeSpaceshipButton.Parent = spaceshipPanel
+    addUICorner(closeSpaceshipButton, 8)
 
     -- 新增：停止移动按钮 - 放在关闭飞船模式按钮右边
     local stopMovementButton = Instance.new("TextButton")
@@ -1001,6 +1040,7 @@ local function CreateMobileGUI()
     stopMovementButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
     stopMovementButton.TextColor3 = Color3.new(1, 1, 1)
     stopMovementButton.Parent = spaceshipPanel
+    addUICorner(stopMovementButton, 8)
 
     -- 新增：隐藏/显示飞船模式UI按钮 - 放在选择模式按钮下方
     local toggleSpaceshipUIButton = Instance.new("TextButton")
@@ -1013,6 +1053,7 @@ local function CreateMobileGUI()
     toggleSpaceshipUIButton.TextColor3 = Color3.new(1, 1, 1)
     toggleSpaceshipUIButton.Visible = false -- 初始不可见
     toggleSpaceshipUIButton.Parent = screenGui
+    addUICorner(toggleSpaceshipUIButton, 8)
 
     MakeDraggable(toggleSpaceshipUIButton)
 
@@ -1118,7 +1159,7 @@ local function CreateMobileGUI()
     spaceshipSpeedUpButton.MouseButton1Click:Connect(function()
         _G.spaceshipSpeed = math.min(_G.spaceshipSpeed + 5, 300)  -- 上限改为300
         spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
-        
+
         -- 如果飞船模式正在运行且有移动方向，只更新速度不改变方向
         if _G.spaceshipMode and _G.currentMoveDirection then
             UpdateSpaceshipSpeed()
@@ -1128,7 +1169,7 @@ local function CreateMobileGUI()
     spaceshipSpeedDownButton.MouseButton1Click:Connect(function()
         _G.spaceshipSpeed = math.max(_G.spaceshipSpeed - 5, 1)
         spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
-        
+
         -- 如果飞船模式正在运行且有移动方向，只更新速度不改变方向
         if _G.spaceshipMode and _G.currentMoveDirection then
             UpdateSpaceshipSpeed()
