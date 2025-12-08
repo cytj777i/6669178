@@ -11,7 +11,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "关于控制未固定零件的脚本我搞了三个，这是第3个版本\n制作灵感来源于反重力状态脚本\n只能控制未固定零件，解除固定也是只能解除你固定的零件\n作者ciTiy"
+authorMessage.Text = "关于控制未固定零件的脚本我搞了三个，这是第3个版本\n制作灵感来源于反重力状态脚本\n只能控制未固定零件，解除固定也是只能解除你固定的零件\n飞船模式就是把你固定的零件集体控制可载人飞行那种\n12/8修复了飞船模式下不好控制的问题\n作者ciTiy"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
@@ -401,7 +401,36 @@ local function ApplyFlip(axis, angleDegrees)
     end
 end
 
--- 飞船模式移动函数 - 修复：正确使用_G.spaceshipSpeed
+-- 获取基于视角的方向（参考第二个脚本）
+local function getCameraRelativeDirection(direction)
+    local camera = Workspace.CurrentCamera
+    if not camera then return direction end
+
+    local cameraCFrame = camera.CFrame
+    local relativeDirection = Vector3.new(0, 0, 0)
+
+    -- 将世界坐标系的方向转换为基于视角的方向
+    if direction == Vector3.new(0, 0, 1) then -- 前
+        relativeDirection = cameraCFrame.LookVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    elseif direction == Vector3.new(0, 0, -1) then -- 后
+        relativeDirection = -cameraCFrame.LookVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    elseif direction == Vector3.new(-1, 0, 0) then -- 左
+        relativeDirection = -cameraCFrame.RightVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    elseif direction == Vector3.new(1, 0, 0) then -- 右
+        relativeDirection = cameraCFrame.RightVector
+        relativeDirection = Vector3.new(relativeDirection.X, 0, relativeDirection.Z).Unit
+    else
+        -- 上下方向保持不变
+        relativeDirection = direction
+    end
+
+    return relativeDirection
+end
+
+-- 飞船模式移动函数 - 修复：基于视角的方向控制
 local function MoveSpaceship(direction)
     if not _G.spaceshipMode then return end
 
@@ -411,17 +440,28 @@ local function MoveSpaceship(direction)
     local moveVector = Vector3.new(0, 0, 0)
     local cameraCFrame = camera.CFrame
 
+    -- 获取基于视角的方向
     if direction == "forward" then
-        moveVector = cameraCFrame.LookVector * _G.spaceshipSpeed
+        -- 前：沿摄像机看向的方向，但忽略Y轴（水平向前）
+        moveVector = cameraCFrame.LookVector
+        moveVector = Vector3.new(moveVector.X, 0, moveVector.Z).Unit * _G.spaceshipSpeed
     elseif direction == "backward" then
-        moveVector = -cameraCFrame.LookVector * _G.spaceshipSpeed
+        -- 后：与向前相反
+        moveVector = -cameraCFrame.LookVector
+        moveVector = Vector3.new(moveVector.X, 0, moveVector.Z).Unit * _G.spaceshipSpeed
     elseif direction == "left" then
-        moveVector = -cameraCFrame.RightVector * _G.spaceshipSpeed
+        -- 左：沿摄像机右侧向量的反方向（即左侧）
+        moveVector = -cameraCFrame.RightVector
+        moveVector = Vector3.new(moveVector.X, 0, moveVector.Z).Unit * _G.spaceshipSpeed
     elseif direction == "right" then
-        moveVector = cameraCFrame.RightVector * _G.spaceshipSpeed
+        -- 右：沿摄像机右侧向量
+        moveVector = cameraCFrame.RightVector
+        moveVector = Vector3.new(moveVector.X, 0, moveVector.Z).Unit * _G.spaceshipSpeed
     elseif direction == "up" then
+        -- 上：世界坐标系Y轴正方向
         moveVector = Vector3.new(0, _G.spaceshipSpeed, 0)
     elseif direction == "down" then
+        -- 下：世界坐标系Y轴负方向
         moveVector = Vector3.new(0, -_G.spaceshipSpeed, 0)
     end
 
@@ -453,7 +493,7 @@ local function MoveSpaceship(direction)
                 _G.spaceshipGyros[part] = bodyGyro
             end
 
-            -- 设置速度 - 修复：正确应用速度
+            -- 设置速度
             _G.spaceshipVelocities[part].Velocity = moveVector
 
             -- 保持陀螺仪方向
@@ -1135,7 +1175,7 @@ local function CreateMobileGUI()
         end
     end)
 
-    -- 飞船模式移动控制
+    -- 飞船模式移动控制 - 使用基于视角的方向
     spaceshipMoveForwardButton.MouseButton1Click:Connect(function()
         MoveSpaceship("forward")
     end)
