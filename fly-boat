@@ -11,7 +11,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "此脚本为免费脚本，被倒卖骗了，我不负责🤫\n关于控制未固定零件的脚本我搞了三个，这是第3个版本\n制作灵感来源于反重力状态脚本\n只能控制未固定零件，解除固定也是只能解除你固定的零件\n飞船模式就是把你固定的零件集体控制可载人飞行那种\n12/8修复了飞船模式下不好控制的问题\n作者ciTiy"
+authorMessage.Text = "此脚本为免费脚本，被倒卖骗了我不负责🤫\n关于控制未固定零件的脚本我搞了三个，这是第3个版本\n制作灵感来源于反重力状态脚本\n只能控制未固定零件，解除固定也是只能解除你固定的零件\n飞船模式就是把你固定的零件集体控制可载人飞行那种\n12/8修复了飞船模式下不好控制的问题\n作者ciTiy"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
