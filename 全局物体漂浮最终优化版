@@ -18,7 +18,7 @@ end
 
 -- 显示作者信息
 local authorMessage = Instance.new("Message")
-authorMessage.Text = "全局物体漂浮脚本 - 作者: ciTiy\n此脚本为免费脚本，被倒卖骗了我不负责😘\n制作灵感来源于反重力状态脚本\n1：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n2：按了停止旋转按钮后可以站在控制的物体上面御物飞行\n3：控制面板ui调节按钮在最底下\n4：更新了速度上限，现在可以调更快了"
+authorMessage.Text = "全局物体漂浮脚本 - 作者: ciTiy\n此脚本为免费脚本，被倒卖骗了我不负责😱\n制作灵感来源于反重力状态脚本\n1：此脚本的控制按键最好不要短时间内连续点击并长按，会出现颜色故障\n2：按了停止旋转按钮后可以站在控制的物体上面御物飞行\n3：控制面板ui调节按钮在最底下\n4：更新了速度上限，现在可以调更快了"
 authorMessage.Parent = Workspace
 delay(5, function()
     authorMessage:Destroy()
