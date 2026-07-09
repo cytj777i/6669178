@@ -14,11 +14,11 @@ if not LocalPlayer then
     LocalPlayer = Players.LocalPlayer
 end
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "BootInfo"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local screenGuiBoot = Instance.new("ScreenGui")
+screenGuiBoot.Name = "BootInfo"
+screenGuiBoot.ResetOnSpawn = false
+screenGuiBoot.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGuiBoot.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "BootFrame"
@@ -27,7 +27,7 @@ mainFrame.Position = UDim2.new(1, 20, 1, 20)
 mainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 mainFrame.BackgroundTransparency = 1
 mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+mainFrame.Parent = screenGuiBoot
 
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 16)
@@ -112,7 +112,6 @@ task.spawn(function()
         if not countdownLabel or not countdownLabel.Parent then return end
         countdownLabel.Text = tostring(timeLeft)
     end
-
     task.wait(0.15)
     if mainFrame and mainFrame.Parent then
         local outTween = TweenService:Create(mainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
@@ -124,8 +123,8 @@ task.spawn(function()
         TweenService:Create(countdownFrame, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play()
         outTween.Completed:Wait()
     end
-    if screenGui and screenGui.Parent then
-        screenGui:Destroy()
+    if screenGuiBoot and screenGuiBoot.Parent then
+        screenGuiBoot:Destroy()
     end
 end)
 
@@ -140,7 +139,7 @@ _G.isFixed = false
 _G.fixedParts = {}
 _G.followConnection = nil
 _G.spaceshipMode = false
-_G.spaceshipSpeed = 20
+_G.spaceshipSpeed = 10
 _G.spaceshipVelocities = {}
 _G.spaceshipGyros = {}
 _G.followVelocity = nil
@@ -152,6 +151,22 @@ _G.rotationSpeed = 1
 _G.activeFlips = {}
 _G.flipAngularVelocities = {}
 _G.currentMoveDirection = nil
+
+_G.globalMode = false
+_G.globalProcessedParts = {}
+_G.globalFloatSpeed = 10
+_G.globalMoveDirectionType = nil
+_G.globalFixedMode = false
+_G.globalFlipAngle = 15
+_G.globalActiveFlips = {}
+_G.globalFlipAngularVelocities = {}
+_G.globalUpdateConnection = nil
+_G.globalDescendantConnection = nil
+_G.globalCurrentMoveDirection = nil
+_G.selectModeActive = false
+_G.savedSelectMode = false
+
+local guiRefs = {}
 
 local function setupSimulationRadius()
     local success, err = pcall(function()
@@ -172,7 +187,6 @@ local function setupAutoReconnect()
     LocalPlayer.CharacterAdded:Connect(function(character)
         character:WaitForChild("Humanoid")
         setupSimulationRadius()
-        print("角色已重生，漂浮控制脚本已自动重新连接")
         if _G.selectedPart then
             _G.isFollowing = false
             if not _G.isFixed then
@@ -180,6 +194,12 @@ local function setupAutoReconnect()
                 removeHighlight()
                 _G.selectedPart = nil
             end
+        end
+        if _G.globalMode then
+            ExitGlobalMode()
+        end
+        if _G.spaceshipMode then
+            ExitSpaceshipMode()
         end
     end)
     LocalPlayer.CharacterRemoving:Connect(function()
@@ -194,6 +214,12 @@ local function setupAutoReconnect()
                 _G.selectedPart = nil
                 _G.isFollowing = false
             end
+        end
+        if _G.globalMode then
+            ExitGlobalMode()
+        end
+        if _G.spaceshipMode then
+            ExitSpaceshipMode()
         end
     end)
 end
@@ -221,7 +247,7 @@ local function removeHighlight()
     end
 end
 
-local function StopPart()
+function StopPart()
     if _G.selectedPart then
         for _, child in ipairs(_G.selectedPart:GetChildren()) do
             if child:IsA("BodyVelocity") or child:IsA("BodyAngularVelocity") or
@@ -501,7 +527,7 @@ local function UpdateSpaceshipSpeed()
     MoveSpaceship(_G.currentMoveDirection)
 end
 
-local function ExitSpaceshipMode()
+function ExitSpaceshipMode()
     _G.spaceshipMode = false
     _G.currentMoveDirection = nil
     StopSpaceshipMovement()
@@ -547,6 +573,38 @@ local function SetupFlipDetection()
                 _G.flipAngularVelocities[part] = nil
             end
         end
+        for part, flipData in pairs(_G.globalActiveFlips) do
+            if part and part.Parent and flipData.angularVelocity and flipData.angularVelocity.Parent then
+                local elapsedTime = currentTime - flipData.startTime
+                local angVel = flipData.angularVelocity.AngularVelocity
+                local expectedAngle = angVel.Magnitude * elapsedTime
+                if expectedAngle >= math.abs(flipData.targetAngle) then
+                    flipData.angularVelocity.AngularVelocity = Vector3.new(0, 0, 0)
+                    if _G.globalProcessedParts[part] and _G.globalProcessedParts[part].savedBodyGyro then
+                        local bg = _G.globalProcessedParts[part].savedBodyGyro
+                        if bg then
+                            bg.Parent = part
+                            bg.CFrame = part.CFrame
+                            _G.globalProcessedParts[part].bodyGyro = bg
+                            _G.globalProcessedParts[part].savedBodyGyro = nil
+                        end
+                    end
+                    _G.globalActiveFlips[part] = nil
+                    _G.globalFlipAngularVelocities[part] = nil
+                end
+            else
+                if _G.globalProcessedParts[part] and _G.globalProcessedParts[part].savedBodyGyro then
+                    local bg = _G.globalProcessedParts[part].savedBodyGyro
+                    if bg then
+                        bg.Parent = part
+                        _G.globalProcessedParts[part].bodyGyro = bg
+                    end
+                    _G.globalProcessedParts[part].savedBodyGyro = nil
+                end
+                _G.globalActiveFlips[part] = nil
+                _G.globalFlipAngularVelocities[part] = nil
+            end
+        end
     end)
 end
 SetupFlipDetection()
@@ -567,6 +625,40 @@ local function CreateLabel(name, text, size, position, parent, fontSize)
     stroke.Parent = label
     label.Parent = parent
     return label
+end
+
+local function CreateNumberInput(name, text, size, position, parent, fontSize, minVal, maxVal, getValue, setValue, formatText)
+    local box = Instance.new("TextBox")
+    box.Name = name
+    box.Size = size
+    box.Position = position
+    box.Text = text
+    box.TextColor3 = Color3.new(1, 1, 1)
+    box.BackgroundTransparency = 1
+    box.TextSize = fontSize or 16
+    box.Font = Enum.Font.FredokaOne
+    box.ClearTextOnFocus = false
+    box.TextEditable = true
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(60, 60, 60)
+    stroke.Thickness = 1.5
+    stroke.Parent = box
+    box.Parent = parent
+    box.FocusLost:Connect(function()
+        local numStr = box.Text:match("(%d+%.?%d*)")
+        if numStr then
+            local num = tonumber(numStr)
+            if num then
+                num = math.floor(num)
+                num = math.clamp(num, minVal, maxVal)
+                setValue(num)
+                box.Text = formatText(num)
+                return
+            end
+        end
+        box.Text = formatText(getValue())
+    end)
+    return box
 end
 
 local function CreateMarshmallowButton(name, text, size, position, parent, textColor)
@@ -621,13 +713,328 @@ local function StylePanel(panel)
     corner.Parent = panel
 end
 
+local function GlobalIsPlayerPart(part)
+    if not part.Parent then return false end
+    if part.Parent == LocalPlayer.Character then return true end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and part:IsDescendantOf(player.Character) then
+            return true
+        end
+    end
+    if part.Parent:FindFirstChild("Humanoid") or part.Parent:FindFirstChild("Head") then
+        return true
+    end
+    return false
+end
+
+local function GlobalCalculateMoveDirection()
+    local camera = Workspace.CurrentCamera
+    if not camera then return Vector3.new(0, 0, 0) end
+    if _G.globalMoveDirectionType == "up" then
+        return Vector3.new(0, 1, 0)
+    elseif _G.globalMoveDirectionType == "down" then
+        return Vector3.new(0, -1, 0)
+    elseif _G.globalMoveDirectionType == "forward" then
+        local lookVector = camera.CFrame.LookVector
+        return Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+    elseif _G.globalMoveDirectionType == "backward" then
+        local lookVector = camera.CFrame.LookVector
+        return -Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+    elseif _G.globalMoveDirectionType == "left" then
+        local rightVector = camera.CFrame.RightVector
+        return -Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+    elseif _G.globalMoveDirectionType == "right" then
+        local rightVector = camera.CFrame.RightVector
+        return Vector3.new(rightVector.X, 0, rightVector.Z).Unit
+    else
+        return Vector3.new(0, 0, 0)
+    end
+end
+
+local function GlobalProcessPart(v)
+    if GlobalIsPlayerPart(v) then return end
+    if v:IsA("Part") and not v.Anchored then
+        if _G.globalProcessedParts[v] then
+            local existingBV = _G.globalProcessedParts[v].bodyVelocity
+            local existingBG = _G.globalProcessedParts[v].bodyGyro
+            if existingBV and existingBV.Parent then
+                if _G.globalMoveDirectionType then
+                    local finalVelocity = GlobalCalculateMoveDirection() * _G.globalFloatSpeed
+                    existingBV.Velocity = finalVelocity
+                else
+                    existingBV.Velocity = Vector3.new(0, 0, 0)
+                end
+                if _G.globalFixedMode then
+                    if not existingBG or not existingBG.Parent then
+                        local bodyGyro = Instance.new("BodyGyro")
+                        bodyGyro.Parent = v
+                        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                        bodyGyro.P = 1000
+                        bodyGyro.D = 100
+                        bodyGyro.CFrame = v.CFrame
+                        _G.globalProcessedParts[v].bodyGyro = bodyGyro
+                    end
+                else
+                    if existingBG and existingBG.Parent then
+                        existingBG:Destroy()
+                        _G.globalProcessedParts[v].bodyGyro = nil
+                    end
+                end
+                return
+            else
+                _G.globalProcessedParts[v] = nil
+            end
+        end
+        for _, x in ipairs(v:GetChildren()) do
+            if x:IsA("BodyAngularVelocity") or x:IsA("BodyForce") or x:IsA("BodyGyro") or
+               x:IsA("BodyPosition") or x:IsA("BodyThrust") or x:IsA("BodyVelocity") then
+                x:Destroy()
+            end
+        end
+        if v:FindFirstChild("Torque") then
+            pcall(function() v.Torque:Destroy() end)
+        end
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Parent = v
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        local bodyGyro = nil
+        if _G.globalFixedMode then
+            bodyGyro = Instance.new("BodyGyro")
+            bodyGyro.Parent = v
+            bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            bodyGyro.P = 1000
+            bodyGyro.D = 100
+            bodyGyro.CFrame = v.CFrame
+        end
+        _G.globalProcessedParts[v] = {
+            bodyVelocity = bodyVelocity,
+            bodyGyro = bodyGyro
+        }
+    end
+end
+
+local function GlobalProcessAllParts()
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        GlobalProcessPart(v)
+    end
+    if _G.globalUpdateConnection then
+        _G.globalUpdateConnection:Disconnect()
+    end
+    _G.globalUpdateConnection = RunService.Heartbeat:Connect(function()
+        for part, data in pairs(_G.globalProcessedParts) do
+            if data.bodyVelocity and data.bodyVelocity.Parent then
+                if _G.globalMoveDirectionType then
+                    data.bodyVelocity.Velocity = GlobalCalculateMoveDirection() * _G.globalFloatSpeed
+                else
+                    data.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+    end)
+end
+
+local function GlobalCleanupParts()
+    if _G.globalUpdateConnection then
+        _G.globalUpdateConnection:Disconnect()
+        _G.globalUpdateConnection = nil
+    end
+    if _G.globalDescendantConnection then
+        _G.globalDescendantConnection:Disconnect()
+        _G.globalDescendantConnection = nil
+    end
+    for part, data in pairs(_G.globalProcessedParts) do
+        if data.bodyVelocity and data.bodyVelocity.Parent then
+            data.bodyVelocity:Destroy()
+        end
+        if data.bodyGyro and data.bodyGyro.Parent then
+            data.bodyGyro:Destroy()
+        end
+    end
+    _G.globalProcessedParts = {}
+    _G.globalActiveFlips = {}
+    _G.globalFlipAngularVelocities = {}
+    _G.globalCurrentMoveDirection = nil
+    _G.globalMoveDirectionType = nil
+end
+
+local function GlobalMoveDirection(direction)
+    _G.globalMoveDirectionType = direction
+    _G.globalCurrentMoveDirection = direction
+    for part, data in pairs(_G.globalProcessedParts) do
+        if part and part.Parent then
+            part.Anchored = false
+            if not data.bodyVelocity or not data.bodyVelocity.Parent then
+                local bodyVelocity = Instance.new("BodyVelocity")
+                bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyVelocity.Parent = part
+                data.bodyVelocity = bodyVelocity
+            end
+            data.bodyVelocity.Velocity = GlobalCalculateMoveDirection() * _G.globalFloatSpeed
+            if _G.globalFixedMode then
+                if not data.bodyGyro or not data.bodyGyro.Parent then
+                    local bodyGyro = Instance.new("BodyGyro")
+                    bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyGyro.P = 1000
+                    bodyGyro.D = 100
+                    bodyGyro.CFrame = part.CFrame
+                    bodyGyro.Parent = part
+                    data.bodyGyro = bodyGyro
+                end
+            end
+        end
+    end
+end
+
+local function GlobalStopMovement()
+    _G.globalMoveDirectionType = nil
+    _G.globalCurrentMoveDirection = nil
+    for part, data in pairs(_G.globalProcessedParts) do
+        if data.bodyVelocity and data.bodyVelocity.Parent then
+            data.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
+local function GlobalToggleFixedMode()
+    _G.globalFixedMode = not _G.globalFixedMode
+    if _G.globalFixedMode then
+        for part, data in pairs(_G.globalProcessedParts) do
+            if part and part.Parent then
+                if not data.bodyGyro or not data.bodyGyro.Parent then
+                    local bodyGyro = Instance.new("BodyGyro")
+                    bodyGyro.Parent = part
+                    bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyGyro.P = 1000
+                    bodyGyro.D = 100
+                    bodyGyro.CFrame = part.CFrame
+                    data.bodyGyro = bodyGyro
+                else
+                    data.bodyGyro.CFrame = part.CFrame
+                end
+            end
+        end
+    else
+        for part, data in pairs(_G.globalProcessedParts) do
+            if data.bodyGyro and data.bodyGyro.Parent then
+                data.bodyGyro:Destroy()
+                data.bodyGyro = nil
+            end
+        end
+    end
+    return _G.globalFixedMode
+end
+
+local function GlobalApplyFlip(axis, angleDegrees)
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    local rightVector = camera.CFrame.RightVector
+    local upVector = camera.CFrame.UpVector
+    local angleRadians = math.rad(angleDegrees) * _G.rotationSpeed
+    for part, data in pairs(_G.globalProcessedParts) do
+        if part and part.Parent then
+            if _G.globalActiveFlips[part] then
+                if _G.globalFlipAngularVelocities[part] then
+                    _G.globalFlipAngularVelocities[part]:Destroy()
+                    _G.globalFlipAngularVelocities[part] = nil
+                end
+                _G.globalActiveFlips[part] = nil
+            end
+            if data.bodyGyro and data.bodyGyro.Parent then
+                data.savedBodyGyro = data.bodyGyro
+                data.bodyGyro.Parent = nil
+                data.bodyGyro = nil
+            end
+            for _, child in ipairs(part:GetChildren()) do
+                if child:IsA("BodyAngularVelocity") then
+                    child:Destroy()
+                end
+            end
+            local angularVelocity = Vector3.new(0, 0, 0)
+            if axis == "X" then
+                angularVelocity = rightVector * angleRadians
+            elseif axis == "Y" then
+                angularVelocity = upVector * angleRadians
+            elseif axis == "Z" then
+                angularVelocity = camera.CFrame.LookVector * angleRadians
+            end
+            local bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+            bodyAngularVelocity.AngularVelocity = angularVelocity
+            bodyAngularVelocity.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            bodyAngularVelocity.Parent = part
+            _G.globalFlipAngularVelocities[part] = bodyAngularVelocity
+            _G.globalActiveFlips[part] = {
+                axis = axis,
+                targetAngle = math.rad(angleDegrees),
+                startTime = tick(),
+                angularVelocity = bodyAngularVelocity
+            }
+        end
+    end
+end
+
+function EnterGlobalMode()
+    if _G.spaceshipMode then
+        ExitSpaceshipMode()
+    end
+    if _G.isFollowing then
+        _G.isFollowing = false
+        StopPart()
+        removeHighlight()
+        _G.selectedPart = nil
+    end
+    for part, _ in pairs(_G.fixedParts) do
+        if part and part.Parent then
+            part.Anchored = false
+        end
+    end
+    _G.fixedParts = {}
+    _G.isFixed = false
+    if guiRefs.controlPanel then
+        guiRefs.controlPanel.Visible = false
+    end
+    _G.savedSelectMode = _G.selectModeActive
+    _G.selectModeActive = false
+    if guiRefs.selectModeButton then
+        guiRefs.selectModeButton.Text = "选择模式: 关闭"
+        guiRefs.selectModeButton.TextColor3 = Color3.fromRGB(220, 80, 80)
+    end
+    _G.globalMode = true
+    _G.globalMoveDirectionType = nil
+    _G.globalCurrentMoveDirection = nil
+    GlobalProcessAllParts()
+    _G.globalDescendantConnection = Workspace.DescendantAdded:Connect(function(v)
+        if _G.globalMode then
+            GlobalProcessPart(v)
+        end
+    end)
+end
+
+function ExitGlobalMode()
+    _G.globalMode = false
+    GlobalCleanupParts()
+    _G.selectModeActive = _G.savedSelectMode or false
+    if guiRefs.selectModeButton then
+        if _G.selectModeActive then
+            guiRefs.selectModeButton.Text = "选择模式: 开启"
+            guiRefs.selectModeButton.TextColor3 = Color3.fromRGB(80, 200, 80)
+        else
+            guiRefs.selectModeButton.Text = "选择模式: 关闭"
+            guiRefs.selectModeButton.TextColor3 = Color3.fromRGB(220, 80, 80)
+        end
+    end
+end
+
 local function CreateMobileGUI()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "SingleObjectFloatingControl"
     screenGui.ResetOnSpawn = false
     screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
     local selectModeButton = CreateMarshmallowButton("SelectModeToggle", "选择模式: 关闭", UDim2.new(0, 150, 0, 40), UDim2.new(1, -160, 0, 10), screenGui, Color3.fromRGB(220, 80, 80))
     MakeDraggable(selectModeButton)
+    guiRefs.selectModeButton = selectModeButton
+
     local controlPanel = Instance.new("Frame")
     controlPanel.Name = "DistanceSpeedPanel"
     controlPanel.Size = UDim2.new(0, 165, 0, 112)
@@ -636,12 +1043,15 @@ local function CreateMobileGUI()
     controlPanel.Visible = false
     controlPanel.Parent = screenGui
     MakeDraggable(controlPanel)
-    local distanceLabel = CreateLabel("DistanceLabel", "距离: " .. _G.followDistance, UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 4), controlPanel, 14)
+    guiRefs.controlPanel = controlPanel
+
+    local distanceBox = CreateNumberInput("DistanceInput", "距离: " .. _G.followDistance, UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 4), controlPanel, 14, 1, 999, function() return _G.followDistance end, function(v) _G.followDistance = v end, function(v) return "距离: " .. v end)
     local distanceDownButton = CreateMarshmallowButton("DistanceDown", "-", UDim2.new(0, 42, 0, 26), UDim2.new(0, 10, 0, 27), controlPanel, Color3.fromRGB(220, 80, 80))
     local distanceUpButton = CreateMarshmallowButton("DistanceUp", "+", UDim2.new(0, 42, 0, 26), UDim2.new(1, -52, 0, 27), controlPanel, Color3.fromRGB(80, 200, 80))
-    local speedLabel = CreateLabel("SpeedLabel", "速度: " .. _G.floatSpeed, UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 58), controlPanel, 14)
+    local speedBox = CreateNumberInput("SpeedInput", "速度: " .. _G.floatSpeed, UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 58), controlPanel, 14, 1, 999, function() return _G.floatSpeed end, function(v) _G.floatSpeed = v end, function(v) return "速度: " .. v end)
     local speedDownButton = CreateMarshmallowButton("SpeedDown", "-5", UDim2.new(0, 42, 0, 26), UDim2.new(0, 10, 0, 81), controlPanel, Color3.fromRGB(220, 80, 80))
     local speedUpButton = CreateMarshmallowButton("SpeedUp", "+5", UDim2.new(0, 42, 0, 26), UDim2.new(1, -52, 0, 81), controlPanel, Color3.fromRGB(80, 200, 80))
+
     local mainControlPanel = Instance.new("Frame")
     mainControlPanel.Name = "MainControlPanel"
     mainControlPanel.Size = UDim2.new(0, 320, 0, 400)
@@ -650,12 +1060,14 @@ local function CreateMobileGUI()
     mainControlPanel.Visible = false
     mainControlPanel.Parent = screenGui
     MakeDraggable(mainControlPanel)
+
     local uiScale = Instance.new("UIScale")
     uiScale.Scale = 0.8
     uiScale.Parent = mainControlPanel
-    local fixButton = CreateMarshmallowButton("FixButton", "固定物体", UDim2.new(0, 140, 0, 40), UDim2.new(0.05, 0, 0, 20), mainControlPanel, Color3.fromRGB(80, 200, 80))
-    local unfixButton = CreateMarshmallowButton("UnfixButton", "解除固定", UDim2.new(0, 140, 0, 40), UDim2.new(0.55, 0, 0, 20), mainControlPanel, Color3.fromRGB(220, 80, 80))
-    local flipLabel = CreateLabel("FlipLabel", "翻转控制 (角度: " .. _G.flipAngle .. "°)", UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0, 80), mainControlPanel, 18)
+
+    local fixButton = CreateMarshmallowButton("FixButton", "固定物体", UDim2.new(0, 140, 0, 40), UDim2.new(0, 15, 0, 20), mainControlPanel, Color3.fromRGB(80, 200, 80))
+    local unfixButton = CreateMarshmallowButton("UnfixButton", "解除固定", UDim2.new(0, 140, 0, 40), UDim2.new(0, 165, 0, 20), mainControlPanel, Color3.fromRGB(220, 80, 80))
+    local flipBox = CreateNumberInput("FlipInput", "翻转控制 (角度: " .. _G.flipAngle .. "°)", UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0, 80), mainControlPanel, 18, 1, 999, function() return _G.flipAngle end, function(v) _G.flipAngle = v end, function(v) return "翻转控制 (角度: " .. v .. "°)" end)
     local flipAngleDownButton = CreateMarshmallowButton("FlipAngleDown", "-", UDim2.new(0, 35, 0, 35), UDim2.new(0.3, -15, 0, 120), mainControlPanel, Color3.fromRGB(220, 80, 80))
     local flipAngleUpButton = CreateMarshmallowButton("FlipAngleUp", "+", UDim2.new(0, 35, 0, 35), UDim2.new(0.7, -15, 0, 120), mainControlPanel, Color3.fromRGB(80, 200, 80))
     local flipUpButton = CreateMarshmallowButton("FlipUp", "上翻转", UDim2.new(0, 80, 0, 40), UDim2.new(0.5, -40, 0, 165), mainControlPanel, Color3.fromRGB(80, 150, 220))
@@ -665,10 +1077,12 @@ local function CreateMobileGUI()
     local scaleLabel = CreateLabel("ScaleLabel", "UI大小: 0.8", UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0, 270), mainControlPanel, 16)
     local scaleDownButton = CreateMarshmallowButton("ScaleDown", "-", UDim2.new(0, 50, 0, 35), UDim2.new(0.3, -25, 0, 300), mainControlPanel, Color3.fromRGB(220, 80, 80))
     local scaleUpButton = CreateMarshmallowButton("ScaleUp", "+", UDim2.new(0, 50, 0, 35), UDim2.new(0.7, -25, 0, 300), mainControlPanel, Color3.fromRGB(80, 200, 80))
-    local spaceshipButton = CreateMarshmallowButton("SpaceshipMode", "开启物体载人", UDim2.new(0, 140, 0, 40), UDim2.new(0.05, 0, 0, 350), mainControlPanel, Color3.fromRGB(220, 150, 50))
-    local closeButton = CreateMarshmallowButton("ClosePanel", "关闭面板", UDim2.new(0, 140, 0, 40), UDim2.new(0.55, 0, 0, 350), mainControlPanel, Color3.fromRGB(220, 80, 80))
+    local spaceshipButton = CreateMarshmallowButton("SpaceshipMode", "开启物体载人", UDim2.new(0, 90, 0, 40), UDim2.new(0, 10, 0, 350), mainControlPanel, Color3.fromRGB(220, 150, 50))
+    local globalModeButton = CreateMarshmallowButton("GlobalMode", "全局模式", UDim2.new(0, 90, 0, 40), UDim2.new(0, 115, 0, 350), mainControlPanel, Color3.fromRGB(150, 80, 220))
+    local closeButton = CreateMarshmallowButton("ClosePanel", "关闭面板", UDim2.new(0, 90, 0, 40), UDim2.new(0, 220, 0, 350), mainControlPanel, Color3.fromRGB(220, 80, 80))
     local openPanelButton = CreateMarshmallowButton("OpenPanel", "打开控制面板", UDim2.new(0, 120, 0, 40), UDim2.new(1, -160, 0, 60), screenGui, Color3.fromRGB(80, 150, 220))
     MakeDraggable(openPanelButton)
+
     local spaceshipPanel = Instance.new("Frame")
     spaceshipPanel.Name = "SpaceshipPanel"
     spaceshipPanel.Size = UDim2.new(0, 350, 0, 440)
@@ -677,11 +1091,13 @@ local function CreateMobileGUI()
     spaceshipPanel.Visible = false
     spaceshipPanel.Parent = screenGui
     MakeDraggable(spaceshipPanel)
+
     local spaceshipUIScale = Instance.new("UIScale")
     spaceshipUIScale.Scale = 0.8
     spaceshipUIScale.Parent = spaceshipPanel
-    local spaceshipTitle = CreateLabel("SpaceshipTitle", "物体载人控制", UDim2.new(1, 0, 0, 32), UDim2.new(0, 0, 0, 8), spaceshipPanel, 20)
-    local spaceshipSpeedLabel = CreateLabel("SpaceshipSpeedLabel", "速度: " .. _G.spaceshipSpeed, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 50), spaceshipPanel, 18)
+
+    local spaceshipTitle = CreateLabel("SpaceshipTitle", "物体载人面板", UDim2.new(1, 0, 0, 32), UDim2.new(0, 0, 0, 8), spaceshipPanel, 20)
+    local spaceshipSpeedBox = CreateNumberInput("SpaceshipSpeedInput", "速度: " .. _G.spaceshipSpeed, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 50), spaceshipPanel, 18, 1, 999, function() return _G.spaceshipSpeed end, function(v) _G.spaceshipSpeed = v; if _G.spaceshipMode and _G.currentMoveDirection then UpdateSpaceshipSpeed() end end, function(v) return "速度: " .. v end)
     local spaceshipSpeedDownButton = CreateMarshmallowButton("SpaceshipSpeedDown", "-", UDim2.new(0, 42, 0, 30), UDim2.new(0.3, -21, 0, 84), spaceshipPanel, Color3.fromRGB(220, 80, 80))
     local spaceshipSpeedUpButton = CreateMarshmallowButton("SpaceshipSpeedUp", "+", UDim2.new(0, 42, 0, 30), UDim2.new(0.7, -21, 0, 84), spaceshipPanel, Color3.fromRGB(80, 200, 80))
     local spaceshipMoveUpButton = CreateMarshmallowButton("SpaceshipMoveUp", "上升", UDim2.new(0, 80, 0, 40), UDim2.new(0.5, -40, 0, 124), spaceshipPanel, Color3.fromRGB(220, 180, 50))
@@ -695,12 +1111,50 @@ local function CreateMobileGUI()
     local spaceshipScaleUpButton = CreateMarshmallowButton("SpaceshipScaleUp", "+", UDim2.new(0, 48, 0, 30), UDim2.new(0.7, -24, 0, 358), spaceshipPanel, Color3.fromRGB(80, 200, 80))
     local closeSpaceshipButton = CreateMarshmallowButton("CloseSpaceship", "返回控制面板", UDim2.new(0, 140, 0, 36), UDim2.new(0.05, 0, 0, 398), spaceshipPanel, Color3.fromRGB(220, 80, 80))
     local stopMovementButton = CreateMarshmallowButton("StopMovement", "停止移动", UDim2.new(0, 140, 0, 36), UDim2.new(0.55, 0, 0, 398), spaceshipPanel, Color3.fromRGB(200, 50, 50))
+
     local toggleSpaceshipUIButton = CreateMarshmallowButton("ToggleSpaceshipUI", "隐藏物体载人UI", UDim2.new(0, 150, 0, 40), UDim2.new(1, -160, 0, 110), screenGui, Color3.fromRGB(80, 150, 220))
     MakeDraggable(toggleSpaceshipUIButton)
     toggleSpaceshipUIButton.Visible = false
-    local selectMode = false
+
+    local globalModePanel = Instance.new("Frame")
+    globalModePanel.Name = "GlobalModePanel"
+    globalModePanel.Size = UDim2.new(0, 350, 0, 560)
+    globalModePanel.Position = UDim2.new(0.5, -140, 0.5, -200)
+    StylePanel(globalModePanel)
+    globalModePanel.Visible = false
+    globalModePanel.Parent = screenGui
+    MakeDraggable(globalModePanel)
+
+    local globalModeUIScale = Instance.new("UIScale")
+    globalModeUIScale.Scale = 0.7
+    globalModeUIScale.Parent = globalModePanel
+
+    local globalModeTitle = CreateLabel("GlobalModeTitle", "全局漂浮模式", UDim2.new(1, 0, 0, 28), UDim2.new(0, 0, 0, 6), globalModePanel, 18)
+    local globalSpeedBox = CreateNumberInput("GlobalSpeedInput", "速度: " .. _G.globalFloatSpeed, UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 38), globalModePanel, 16, 1, 999, function() return _G.globalFloatSpeed end, function(v) _G.globalFloatSpeed = v end, function(v) return "速度: " .. v end)
+    local globalSpeedDownButton = CreateMarshmallowButton("GlobalSpeedDown", "-", UDim2.new(0, 42, 0, 28), UDim2.new(0.3, -21, 0, 64), globalModePanel, Color3.fromRGB(220, 80, 80))
+    local globalSpeedUpButton = CreateMarshmallowButton("GlobalSpeedUp", "+", UDim2.new(0, 42, 0, 28), UDim2.new(0.7, -21, 0, 64), globalModePanel, Color3.fromRGB(80, 200, 80))
+    local globalMoveUpButton = CreateMarshmallowButton("GlobalMoveUp", "上升", UDim2.new(0, 80, 0, 32), UDim2.new(0.5, -40, 0, 100), globalModePanel, Color3.fromRGB(220, 180, 50))
+    local globalMoveForwardButton = CreateMarshmallowButton("GlobalMoveForward", "前进", UDim2.new(0, 100, 0, 32), UDim2.new(0.5, -50, 0, 144), globalModePanel, Color3.fromRGB(80, 200, 80))
+    local globalMoveDownButton = CreateMarshmallowButton("GlobalMoveDown", "下降", UDim2.new(0, 80, 0, 32), UDim2.new(0.5, -40, 0, 188), globalModePanel, Color3.fromRGB(220, 180, 50))
+    local globalMoveLeftButton = CreateMarshmallowButton("GlobalMoveLeft", "左移", UDim2.new(0, 80, 0, 32), UDim2.new(0.15, -20, 0, 144), globalModePanel, Color3.fromRGB(80, 150, 220))
+    local globalMoveRightButton = CreateMarshmallowButton("GlobalMoveRight", "右移", UDim2.new(0, 80, 0, 32), UDim2.new(0.85, -60, 0, 144), globalModePanel, Color3.fromRGB(80, 150, 220))
+    local globalMoveBackwardButton = CreateMarshmallowButton("GlobalMoveBackward", "后退", UDim2.new(0, 100, 0, 32), UDim2.new(0.5, -50, 0, 232), globalModePanel, Color3.fromRGB(220, 80, 80))
+    local globalStopMovementButton = CreateMarshmallowButton("GlobalStopMovement", "停止移动", UDim2.new(0, 100, 0, 32), UDim2.new(0.5, -50, 0, 276), globalModePanel, Color3.fromRGB(200, 50, 50))
+    local globalUIScaleLabel = CreateLabel("GlobalUIScaleLabel", "UI大小: 0.7", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 316), globalModePanel, 16)
+    local globalUIScaleDownButton = CreateMarshmallowButton("GlobalUIScaleDown", "-", UDim2.new(0, 42, 0, 28), UDim2.new(0.3, -21, 0, 342), globalModePanel, Color3.fromRGB(220, 80, 80))
+    local globalUIScaleUpButton = CreateMarshmallowButton("GlobalUIScaleUp", "+", UDim2.new(0, 42, 0, 28), UDim2.new(0.7, -21, 0, 342), globalModePanel, Color3.fromRGB(80, 200, 80))
+    local globalFlipBox = CreateNumberInput("GlobalFlipInput", "翻转控制 (角度: " .. _G.globalFlipAngle .. "°)", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 376), globalModePanel, 16, 1, 999, function() return _G.globalFlipAngle end, function(v) _G.globalFlipAngle = v end, function(v) return "翻转控制 (角度: " .. v .. "°)" end)
+    local globalFlipAngleDownButton = CreateMarshmallowButton("GlobalFlipAngleDown", "-", UDim2.new(0, 35, 0, 28), UDim2.new(0.3, -17, 0, 402), globalModePanel, Color3.fromRGB(220, 80, 80))
+    local globalFlipAngleUpButton = CreateMarshmallowButton("GlobalFlipAngleUp", "+", UDim2.new(0, 35, 0, 28), UDim2.new(0.7, -17, 0, 402), globalModePanel, Color3.fromRGB(80, 200, 80))
+    local globalFlipUpButton = CreateMarshmallowButton("GlobalFlipUp", "上翻转", UDim2.new(0, 70, 0, 28), UDim2.new(0.5, -35, 0, 438), globalModePanel, Color3.fromRGB(80, 150, 220))
+    local globalFlipDownButton = CreateMarshmallowButton("GlobalFlipDown", "下翻转", UDim2.new(0, 70, 0, 28), UDim2.new(0.5, -35, 0, 476), globalModePanel, Color3.fromRGB(80, 150, 220))
+    local globalFlipLeftButton = CreateMarshmallowButton("GlobalFlipLeft", "左翻转", UDim2.new(0, 70, 0, 28), UDim2.new(0.15, 0, 0, 457), globalModePanel, Color3.fromRGB(80, 150, 220))
+    local globalFlipRightButton = CreateMarshmallowButton("GlobalFlipRight", "右翻转", UDim2.new(0, 70, 0, 28), UDim2.new(0.85, -70, 0, 457), globalModePanel, Color3.fromRGB(80, 150, 220))
+    local globalFixedModeButton = CreateMarshmallowButton("GlobalFixedMode", "防止旋转: 关", UDim2.new(0, 150, 0, 28), UDim2.new(0, 20, 0, 516), globalModePanel, Color3.fromRGB(200, 100, 100))
+    local closeGlobalModeButton = CreateMarshmallowButton("CloseGlobalMode", "关闭全局模式", UDim2.new(0, 150, 0, 28), UDim2.new(0, 180, 0, 516), globalModePanel, Color3.fromRGB(220, 80, 80))
+
     local function onMouseClick()
-        if not selectMode then return end
+        if not _G.selectModeActive or _G.globalMode then return end
         local targetPart = getTargetPart()
         if targetPart then
             SelectPart(targetPart)
@@ -713,21 +1167,22 @@ local function CreateMobileGUI()
             onMouseClick()
         end
     end)
+
     distanceUpButton.MouseButton1Click:Connect(function()
-        _G.followDistance = math.min(_G.followDistance + 1, 300)
-        distanceLabel.Text = "距离: " .. _G.followDistance
+        _G.followDistance = math.min(_G.followDistance + 1, 999)
+        distanceBox.Text = "距离: " .. _G.followDistance
     end)
     distanceDownButton.MouseButton1Click:Connect(function()
         _G.followDistance = math.max(_G.followDistance - 1, 1)
-        distanceLabel.Text = "距离: " .. _G.followDistance
+        distanceBox.Text = "距离: " .. _G.followDistance
     end)
     speedUpButton.MouseButton1Click:Connect(function()
-        _G.floatSpeed = math.min(_G.floatSpeed + 5, 300)
-        speedLabel.Text = "速度: " .. _G.floatSpeed
+        _G.floatSpeed = math.min(_G.floatSpeed + 5, 999)
+        speedBox.Text = "速度: " .. _G.floatSpeed
     end)
     speedDownButton.MouseButton1Click:Connect(function()
         _G.floatSpeed = math.max(_G.floatSpeed - 5, 1)
-        speedLabel.Text = "速度: " .. _G.floatSpeed
+        speedBox.Text = "速度: " .. _G.floatSpeed
     end)
     fixButton.MouseButton1Click:Connect(function()
         if FixPart() then controlPanel.Visible = false end
@@ -736,12 +1191,12 @@ local function CreateMobileGUI()
         if UnfixPart() then controlPanel.Visible = true end
     end)
     flipAngleUpButton.MouseButton1Click:Connect(function()
-        _G.flipAngle = math.min(_G.flipAngle + 1, 90)
-        flipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+        _G.flipAngle = math.min(_G.flipAngle + 1, 999)
+        flipBox.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
     end)
     flipAngleDownButton.MouseButton1Click:Connect(function()
         _G.flipAngle = math.max(_G.flipAngle - 1, 1)
-        flipLabel.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
+        flipBox.Text = "翻转控制 (角度: " .. _G.flipAngle .. "°)"
     end)
     flipUpButton.MouseButton1Click:Connect(function() ApplyFlip("X", _G.flipAngle) end)
     flipDownButton.MouseButton1Click:Connect(function() ApplyFlip("X", -_G.flipAngle) end)
@@ -756,13 +1211,13 @@ local function CreateMobileGUI()
         scaleLabel.Text = "UI大小: " .. string.format("%.1f", uiScale.Scale)
     end)
     spaceshipSpeedUpButton.MouseButton1Click:Connect(function()
-        _G.spaceshipSpeed = math.min(_G.spaceshipSpeed + 5, 300)
-        spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
+        _G.spaceshipSpeed = math.min(_G.spaceshipSpeed + 5, 999)
+        spaceshipSpeedBox.Text = "速度: " .. _G.spaceshipSpeed
         if _G.spaceshipMode and _G.currentMoveDirection then UpdateSpaceshipSpeed() end
     end)
     spaceshipSpeedDownButton.MouseButton1Click:Connect(function()
         _G.spaceshipSpeed = math.max(_G.spaceshipSpeed - 5, 1)
-        spaceshipSpeedLabel.Text = "速度: " .. _G.spaceshipSpeed
+        spaceshipSpeedBox.Text = "速度: " .. _G.spaceshipSpeed
         if _G.spaceshipMode and _G.currentMoveDirection then UpdateSpaceshipSpeed() end
     end)
     spaceshipMoveForwardButton.MouseButton1Click:Connect(function() MoveSpaceship("forward") end)
@@ -780,15 +1235,14 @@ local function CreateMobileGUI()
         spaceshipScaleLabel.Text = "UI大小: " .. string.format("%.1f", spaceshipUIScale.Scale)
     end)
     selectModeButton.MouseButton1Click:Connect(function()
-        selectMode = not selectMode
-        if selectMode then
+        if _G.globalMode then return end
+        _G.selectModeActive = not _G.selectModeActive
+        if _G.selectModeActive then
             selectModeButton.Text = "选择模式: 开启"
             selectModeButton.TextColor3 = Color3.fromRGB(80, 200, 80)
-            print("选择模式已开启")
         else
             selectModeButton.Text = "选择模式: 关闭"
             selectModeButton.TextColor3 = Color3.fromRGB(220, 80, 80)
-            print("选择模式已关闭")
         end
     end)
     spaceshipButton.MouseButton1Click:Connect(function()
@@ -804,7 +1258,6 @@ local function CreateMobileGUI()
             spaceshipPanel.Visible = true
             openPanelButton.Visible = false
             toggleSpaceshipUIButton.Visible = true
-            print("飞船模式已开启，控制所有固定物体")
             for part, _ in pairs(_G.fixedParts) do
                 if part and part.Parent then
                     part.Anchored = false
@@ -822,8 +1275,6 @@ local function CreateMobileGUI()
                     _G.spaceshipGyros[part] = bodyGyro
                 end
             end
-        else
-            print("没有固定的物体，无法开启物体载人")
         end
     end)
     closeSpaceshipButton.MouseButton1Click:Connect(function()
@@ -831,7 +1282,6 @@ local function CreateMobileGUI()
         spaceshipPanel.Visible = false
         openPanelButton.Visible = true
         toggleSpaceshipUIButton.Visible = false
-        print("飞船模式已关闭")
     end)
     toggleSpaceshipUIButton.MouseButton1Click:Connect(function()
         spaceshipPanel.Visible = not spaceshipPanel.Visible
@@ -843,7 +1293,6 @@ local function CreateMobileGUI()
     end)
     stopMovementButton.MouseButton1Click:Connect(function()
         StopSpaceshipMovement()
-        print("紧急刹车！所有物体已停止移动")
     end)
     closeButton.MouseButton1Click:Connect(function()
         mainControlPanel.Visible = false
@@ -853,6 +1302,69 @@ local function CreateMobileGUI()
         mainControlPanel.Visible = true
         openPanelButton.Visible = false
     end)
+
+    globalModeButton.MouseButton1Click:Connect(function()
+        mainControlPanel.Visible = false
+        globalModePanel.Visible = true
+        openPanelButton.Visible = false
+        toggleSpaceshipUIButton.Visible = false
+        EnterGlobalMode()
+    end)
+
+    closeGlobalModeButton.MouseButton1Click:Connect(function()
+        ExitGlobalMode()
+        globalModePanel.Visible = false
+        openPanelButton.Visible = true
+    end)
+
+    globalSpeedUpButton.MouseButton1Click:Connect(function()
+        _G.globalFloatSpeed = math.min(_G.globalFloatSpeed + 5, 999)
+        globalSpeedBox.Text = "速度: " .. _G.globalFloatSpeed
+    end)
+    globalSpeedDownButton.MouseButton1Click:Connect(function()
+        _G.globalFloatSpeed = math.max(_G.globalFloatSpeed - 5, 1)
+        globalSpeedBox.Text = "速度: " .. _G.globalFloatSpeed
+    end)
+    globalMoveForwardButton.MouseButton1Click:Connect(function() GlobalMoveDirection("forward") end)
+    globalMoveBackwardButton.MouseButton1Click:Connect(function() GlobalMoveDirection("backward") end)
+    globalMoveLeftButton.MouseButton1Click:Connect(function() GlobalMoveDirection("left") end)
+    globalMoveRightButton.MouseButton1Click:Connect(function() GlobalMoveDirection("right") end)
+    globalMoveUpButton.MouseButton1Click:Connect(function() GlobalMoveDirection("up") end)
+    globalMoveDownButton.MouseButton1Click:Connect(function() GlobalMoveDirection("down") end)
+    globalStopMovementButton.MouseButton1Click:Connect(function()
+        GlobalStopMovement()
+    end)
+    globalUIScaleUpButton.MouseButton1Click:Connect(function()
+        globalModeUIScale.Scale = math.min(globalModeUIScale.Scale + 0.1, 1.5)
+        globalUIScaleLabel.Text = "UI大小: " .. string.format("%.1f", globalModeUIScale.Scale)
+    end)
+    globalUIScaleDownButton.MouseButton1Click:Connect(function()
+        globalModeUIScale.Scale = math.max(globalModeUIScale.Scale - 0.1, 0.5)
+        globalUIScaleLabel.Text = "UI大小: " .. string.format("%.1f", globalModeUIScale.Scale)
+    end)
+    globalFlipAngleUpButton.MouseButton1Click:Connect(function()
+        _G.globalFlipAngle = math.min(_G.globalFlipAngle + 1, 999)
+        globalFlipBox.Text = "翻转控制 (角度: " .. _G.globalFlipAngle .. "°)"
+    end)
+    globalFlipAngleDownButton.MouseButton1Click:Connect(function()
+        _G.globalFlipAngle = math.max(_G.globalFlipAngle - 1, 1)
+        globalFlipBox.Text = "翻转控制 (角度: " .. _G.globalFlipAngle .. "°)"
+    end)
+    globalFlipUpButton.MouseButton1Click:Connect(function() GlobalApplyFlip("X", _G.globalFlipAngle) end)
+    globalFlipDownButton.MouseButton1Click:Connect(function() GlobalApplyFlip("X", -_G.globalFlipAngle) end)
+    globalFlipLeftButton.MouseButton1Click:Connect(function() GlobalApplyFlip("Y", -_G.globalFlipAngle) end)
+    globalFlipRightButton.MouseButton1Click:Connect(function() GlobalApplyFlip("Y", _G.globalFlipAngle) end)
+    globalFixedModeButton.MouseButton1Click:Connect(function()
+        local newState = GlobalToggleFixedMode()
+        if newState then
+            globalFixedModeButton.Text = "防止旋转: 开"
+            globalFixedModeButton.TextColor3 = Color3.fromRGB(80, 200, 80)
+        else
+            globalFixedModeButton.Text = "防止旋转: 关"
+            globalFixedModeButton.TextColor3 = Color3.fromRGB(200, 100, 100)
+        end
+    end)
+
     local function updateUI()
         if _G.selectedPart then
             controlPanel.Visible = not _G.isFixed
