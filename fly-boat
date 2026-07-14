@@ -52,7 +52,7 @@ textLabel.Name = "BootText"
 textLabel.Size = UDim2.new(1, -50, 1, -12)
 textLabel.Position = UDim2.new(0, 14, 0, 6)
 textLabel.BackgroundTransparency = 1
-textLabel.Text = "制作灵感来自反重力状态脚本，只能控制未固定物体，解除固定只能解除你选择的固定的物体，物体载人模式就是把你固定的物体集体控制可载人飞行那种，开源的，有不满意就从源码上自行修改吧/2026/7/06/"
+textLabel.Text = "制作灵感来自反重力状态脚本，只能控制未固定物体，解除固定只能解除你选择的固定的物体，物体载人模式就是把你固定的物体集体控制可载人飞行那种，开源的，有不满意就从源码上自行修改吧/2026/7/14/"
 textLabel.TextColor3 = Color3.fromRGB(70, 70, 80)
 textLabel.TextSize = 15
 textLabel.Font = Enum.Font.FredokaOne
@@ -1008,6 +1008,10 @@ function EnterGlobalMode()
             GlobalProcessPart(v)
         end
     end)
+    if guiRefs.toggleGlobalModeUI then
+        guiRefs.toggleGlobalModeUI.Visible = true
+        guiRefs.toggleGlobalModeUI.Text = "隐藏全局模式UI"
+    end
 end
 
 function ExitGlobalMode()
@@ -1022,6 +1026,10 @@ function ExitGlobalMode()
             guiRefs.selectModeButton.Text = "选择模式: 关闭"
             guiRefs.selectModeButton.TextColor3 = Color3.fromRGB(220, 80, 80)
         end
+    end
+    if guiRefs.toggleGlobalModeUI then
+        guiRefs.toggleGlobalModeUI.Visible = false
+        guiRefs.toggleGlobalModeUI.Text = "隐藏全局模式UI"
     end
 end
 
@@ -1112,7 +1120,7 @@ local function CreateMobileGUI()
     local closeSpaceshipButton = CreateMarshmallowButton("CloseSpaceship", "返回控制面板", UDim2.new(0, 140, 0, 36), UDim2.new(0.05, 0, 0, 398), spaceshipPanel, Color3.fromRGB(220, 80, 80))
     local stopMovementButton = CreateMarshmallowButton("StopMovement", "停止移动", UDim2.new(0, 140, 0, 36), UDim2.new(0.55, 0, 0, 398), spaceshipPanel, Color3.fromRGB(200, 50, 50))
 
-    local toggleSpaceshipUIButton = CreateMarshmallowButton("ToggleSpaceshipUI", "隐藏物体载人UI", UDim2.new(0, 150, 0, 40), UDim2.new(1, -160, 0, 110), screenGui, Color3.fromRGB(80, 150, 220))
+    local toggleSpaceshipUIButton = CreateMarshmallowButton("ToggleSpaceshipUI", "隐藏物体载人UI", UDim2.new(0, 150, 0, 40), UDim2.new(1, -160, 0, 60), screenGui, Color3.fromRGB(80, 150, 220))
     MakeDraggable(toggleSpaceshipUIButton)
     toggleSpaceshipUIButton.Visible = false
 
@@ -1152,6 +1160,11 @@ local function CreateMobileGUI()
     local globalFlipRightButton = CreateMarshmallowButton("GlobalFlipRight", "右翻转", UDim2.new(0, 70, 0, 28), UDim2.new(0.85, -70, 0, 457), globalModePanel, Color3.fromRGB(80, 150, 220))
     local globalFixedModeButton = CreateMarshmallowButton("GlobalFixedMode", "防止旋转: 关", UDim2.new(0, 150, 0, 28), UDim2.new(0, 20, 0, 516), globalModePanel, Color3.fromRGB(200, 100, 100))
     local closeGlobalModeButton = CreateMarshmallowButton("CloseGlobalMode", "关闭全局模式", UDim2.new(0, 150, 0, 28), UDim2.new(0, 180, 0, 516), globalModePanel, Color3.fromRGB(220, 80, 80))
+
+    local toggleGlobalModeUIButton = CreateMarshmallowButton("ToggleGlobalModeUI", "隐藏全局模式UI", UDim2.new(0, 150, 0, 40), UDim2.new(1, -160, 0, 60), screenGui, Color3.fromRGB(150, 80, 220))
+    MakeDraggable(toggleGlobalModeUIButton)
+    toggleGlobalModeUIButton.Visible = false
+    guiRefs.toggleGlobalModeUI = toggleGlobalModeUIButton
 
     local function onMouseClick()
         if not _G.selectModeActive or _G.globalMode then return end
@@ -1315,6 +1328,15 @@ local function CreateMobileGUI()
         ExitGlobalMode()
         globalModePanel.Visible = false
         openPanelButton.Visible = true
+    end)
+
+    toggleGlobalModeUIButton.MouseButton1Click:Connect(function()
+        globalModePanel.Visible = not globalModePanel.Visible
+        if globalModePanel.Visible then
+            toggleGlobalModeUIButton.Text = "隐藏全局模式UI"
+        else
+            toggleGlobalModeUIButton.Text = "显示全局模式UI"
+        end
     end)
 
     globalSpeedUpButton.MouseButton1Click:Connect(function()
